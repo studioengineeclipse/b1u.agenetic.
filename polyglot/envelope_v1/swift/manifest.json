@@ -1,0 +1,32 @@
+{
+  "build_command": [
+    "swiftc",
+    "-o",
+    "{out}",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical"
+  ],
+  "digest_verification": "NOT_IN_STDLIB",
+  "expected_output": "SWIFT:POSTCONDITION:payload_digest_is_lowercase_hex64",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": null,
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "payload_digest_is_lowercase_hex64",
+  "language": "Swift",
+  "observable_contribution": "Rejects the canonical vector if payload_digest is absent, not exactly 64 characters, or contains any character outside lowercase hex, naming upper-case hex separately.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "swiftc",
+  "responsibility": "Verify payload_digest is exactly 64 lowercase hex characters",
+  "run_command": [
+    "{out}",
+    "{contract}",
+    "{vector}"
+  ],
+  "source": "polyglot/envelope_v1/swift/main.swift",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Swift\""
+}

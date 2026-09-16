@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Minimal project so the C# consumer builds with `dotnet build` and nothing
+    installed beyond the .NET SDK. The upstream OmegaSigma13.9 harness targeted
+    csc plus mono; B1 targets dotnet instead, because mono is legacy and the
+    OmniBook's Windows ARM64 target ships the modern SDK.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AssemblyName>b1-csharp-consumer</AssemblyName>
+    <RootNamespace>B1.Conformance</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,33 @@
+{
+  "build_command": [
+    "dart",
+    "analyze",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-002-unicode-keys.canonical"
+  ],
+  "digest_verification": "NOT_IN_STDLIB",
+  "expected_output": "DART:POSTCONDITION:unicode_keys_are_ascending_by_code_point",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": null,
+  "input_vector": "conformance/vectors/envelope-002-unicode-keys.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "unicode_keys_are_ascending_by_code_point",
+  "language": "Dart",
+  "observable_contribution": "Rejects the unicode vector if its payload has no non-ASCII keys, or if those keys are not in strictly ascending Unicode code-point order, comparing by rune rather than by UTF-16 code unit.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "dart",
+  "responsibility": "Verify non-ASCII keys are ordered by Unicode code point",
+  "run_command": [
+    "dart",
+    "run",
+    "{source}",
+    "{contract}",
+    "{vector}"
+  ],
+  "source": "polyglot/envelope_v1/dart/main.dart",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Dart\""
+}

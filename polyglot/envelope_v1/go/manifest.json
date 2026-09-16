@@ -1,0 +1,35 @@
+{
+  "build_command": [
+    "go",
+    "build",
+    "-o",
+    "{out}",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "GO:POSTCONDITION:origin_is_one_of_u_m_p_e",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "origin_is_one_of_u_m_p_e",
+  "language": "Go",
+  "observable_contribution": "Rejects the canonical vector if its origin is absent or is not exactly one of U, M, P, E, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "go",
+  "responsibility": "Verify origin is drawn from the closed set U, M, P, E",
+  "run_command": [
+    "{out}",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/go/main.go",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Go\""
+}

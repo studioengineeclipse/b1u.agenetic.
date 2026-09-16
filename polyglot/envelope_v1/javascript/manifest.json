@@ -1,0 +1,34 @@
+{
+  "build_command": [
+    "node",
+    "--check",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "JavaScript:POSTCONDITION:canonical_contains_no_null_literal",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "canonical_contains_no_null_literal",
+  "language": "JavaScript",
+  "observable_contribution": "Rejects the canonical vector if a bare null literal appears outside a string, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "node",
+  "responsibility": "Verify no bare null literal survives canonicalisation",
+  "run_command": [
+    "node",
+    "{source}",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/javascript/main.js",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"JavaScript\""
+}

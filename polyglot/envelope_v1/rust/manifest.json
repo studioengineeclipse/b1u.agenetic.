@@ -1,0 +1,32 @@
+{
+  "build_command": [
+    "rustc",
+    "-o",
+    "{out}",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-002-unicode-keys.canonical"
+  ],
+  "digest_verification": "NOT_IN_STDLIB",
+  "expected_output": "RUST:POSTCONDITION:non_ascii_is_unescaped",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": null,
+  "input_vector": "conformance/vectors/envelope-002-unicode-keys.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "non_ascii_is_unescaped",
+  "language": "Rust",
+  "observable_contribution": "Rejects the unicode vector if it is not valid UTF-8, if it contains no non-ASCII character at all, or if any backslash-u escape appears.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "rustc",
+  "responsibility": "Verify non-ASCII is emitted as raw UTF-8 rather than escaped",
+  "run_command": [
+    "{out}",
+    "{contract}",
+    "{vector}"
+  ],
+  "source": "polyglot/envelope_v1/rust/main.rs",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Rust\""
+}

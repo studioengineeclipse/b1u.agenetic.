@@ -1,0 +1,32 @@
+{
+  "build_command": [
+    "cc",
+    "{source}",
+    "-o",
+    "{out}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical"
+  ],
+  "digest_verification": "NOT_IN_STDLIB",
+  "expected_output": "C:POSTCONDITION:canonical_has_no_insignificant_whitespace",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": null,
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "canonical_has_no_insignificant_whitespace",
+  "language": "C",
+  "observable_contribution": "Rejects the canonical vector if any space, tab, newline or carriage return appears outside a string literal, other than the single terminating newline.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "cc",
+  "responsibility": "Verify canonical bytes carry no insignificant whitespace",
+  "run_command": [
+    "{out}",
+    "{contract}",
+    "{vector}"
+  ],
+  "source": "polyglot/envelope_v1/c/main.c",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"C\""
+}

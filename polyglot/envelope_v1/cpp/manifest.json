@@ -1,0 +1,33 @@
+{
+  "build_command": [
+    "c++",
+    "-std=c++17",
+    "{source}",
+    "-o",
+    "{out}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical"
+  ],
+  "digest_verification": "NOT_IN_STDLIB",
+  "expected_output": "C++:POSTCONDITION:canonical_ends_with_single_newline",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": null,
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "canonical_ends_with_single_newline",
+  "language": "C++",
+  "observable_contribution": "Rejects the canonical vector if it does not end with exactly one bare newline, or if any raw newline precedes the terminator.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "c++",
+  "responsibility": "Verify canonical bytes end with exactly one bare newline",
+  "run_command": [
+    "{out}",
+    "{contract}",
+    "{vector}"
+  ],
+  "source": "polyglot/envelope_v1/cpp/main.cpp",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"C++\""
+}

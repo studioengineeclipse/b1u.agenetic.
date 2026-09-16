@@ -1,0 +1,34 @@
+{
+  "build_command": [
+    "php",
+    "-l",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-003-effect.canonical",
+    "conformance/vectors/envelope-003-effect.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "PHP:POSTCONDITION:effect_requires_authority_digest",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-003-effect.expected.json",
+  "input_vector": "conformance/vectors/envelope-003-effect.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "effect_requires_authority_digest",
+  "language": "PHP",
+  "observable_contribution": "Rejects the effect vector if it names an effect_identity without an authority_envelope_digest, or if that digest is not 64 lowercase hex characters, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "php",
+  "responsibility": "Verify an effect record names the authority that permitted it",
+  "run_command": [
+    "php",
+    "{source}",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/php/main.php",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"PHP\""
+}

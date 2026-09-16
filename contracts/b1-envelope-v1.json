@@ -1,0 +1,39 @@
+{
+  "contract_id": "b1-envelope-v1",
+  "version": "1",
+  "subject": "schemas/b1-event-envelope-v1.schema.json",
+  "purpose": "Fourteen independent toolchains each check one property of B1's canonical envelope form. No single implementation's bug can silently define what B1 considers true, because thirteen others would have to share it.",
+  "participation_rule": "Every language owns exactly one invariant below and verifies it against the named committed vector. Languages whose STANDARD LIBRARY provides SHA-256 additionally verify that the vector's bytes hash to the declared digest. B1 deliberately does not carry fourteen hand-written cryptographic primitives: a hand-rolled SHA-256 that nobody on the target machine can execute is weaker evidence than an honestly declared gap, so each manifest states its digest_verification as STDLIB or NOT_IN_STDLIB.",
+  "invariants": {
+    "canonical_has_no_insignificant_whitespace": true,
+    "canonical_ends_with_single_newline": true,
+    "top_level_keys_are_ascending": true,
+    "payload_contains_no_float": true,
+    "canonical_contains_no_null_literal": true,
+    "origin_is_one_of_u_m_p_e": true,
+    "non_ascii_is_unescaped": true,
+    "schema_version_is_exact": true,
+    "epoch_is_non_negative_integer": true,
+    "payload_digest_is_lowercase_hex64": true,
+    "effect_requires_authority_digest": true,
+    "effect_requires_persistence_class": true,
+    "epistemic_status_is_one_of_four": true,
+    "unicode_keys_are_ascending_by_code_point": true
+  },
+  "why_each_matters": {
+    "canonical_has_no_insignificant_whitespace": "A single stray space changes the bytes, therefore the digest, therefore history.",
+    "canonical_ends_with_single_newline": "The trailing newline is part of the canonical form. One, at the end, never two.",
+    "top_level_keys_are_ascending": "Key order is what makes two independent serializers agree. If it drifts, every digest drifts with it.",
+    "payload_contains_no_float": "Python renders floats via repr() and Rust serde_json via Ryu. These can disagree, which would give two peers different digests for the same record.",
+    "canonical_contains_no_null_literal": "After canonicalisation an absent key and an explicit null are indistinguishable in several of these fourteen languages, which would give one envelope two canonical forms.",
+    "origin_is_one_of_u_m_p_e": "Origin is a closed set. An unrecognised origin would let a record escape the U/M/P/E classification entirely.",
+    "non_ascii_is_unescaped": "Non-ASCII must be emitted raw, not as \\uXXXX. An escaping serializer produces different bytes for the same logical value.",
+    "schema_version_is_exact": "A reader that accepts an unknown schema version is processing a record whose meaning it has not established.",
+    "epoch_is_non_negative_integer": "The epoch is a fence. A non-integer or negative fence cannot be compared monotonically.",
+    "payload_digest_is_lowercase_hex64": "Hex case is part of the bytes. An upper-case digest is a different string and so a different record.",
+    "effect_requires_authority_digest": "An effect that names no authority is unauthorised by construction, whatever the surrounding prose claims.",
+    "effect_requires_persistence_class": "Recovery limits must be classified before the effect happens, not discovered afterwards.",
+    "epistemic_status_is_one_of_four": "VERIFIED, WORKING_ASSUMPTION, UNKNOWN and IN_DOUBT are the only honest states. Anything else is a claim without a grade.",
+    "unicode_keys_are_ascending_by_code_point": "UTF-8 byte order equals Unicode code-point order, which is why Python sort_keys and Rust BTreeMap agree. This invariant is what proves that rather than assuming it."
+  }
+}

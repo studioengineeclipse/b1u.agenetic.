@@ -1,0 +1,41 @@
+{
+  "build_command": [
+    "tsc",
+    "{source}",
+    "--target",
+    "es2020",
+    "--module",
+    "commonjs",
+    "--outDir",
+    "{outdir}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "TYPESCRIPT:POSTCONDITION:schema_version_is_exact",
+  "helper_tools": [
+    "node"
+  ],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "schema_version_is_exact",
+  "language": "TypeScript",
+  "observable_contribution": "Rejects the canonical vector if schema_version is absent, non-string, or anything other than the exact value b1-event-envelope-1, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "tsc",
+  "responsibility": "Verify schema_version matches exactly and is never range-matched",
+  "run_command": [
+    "node",
+    "{outdir}/main.js",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/typescript/main.ts",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"TypeScript\""
+}

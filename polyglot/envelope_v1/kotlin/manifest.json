@@ -1,0 +1,39 @@
+{
+  "build_command": [
+    "kotlinc",
+    "{source}",
+    "-include-runtime",
+    "-d",
+    "{outdir}/consumer.jar"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "KOTLIN:POSTCONDITION:epoch_is_non_negative_integer",
+  "helper_tools": [
+    "java"
+  ],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "epoch_is_non_negative_integer",
+  "language": "Kotlin",
+  "observable_contribution": "Rejects the canonical vector if epoch is absent, carries a fraction or exponent, is unparseable as an integer, or is negative, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "kotlinc",
+  "responsibility": "Verify the fencing epoch is a non-negative integer",
+  "run_command": [
+    "java",
+    "-jar",
+    "{outdir}/consumer.jar",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/kotlin/Main.kt",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Kotlin\""
+}

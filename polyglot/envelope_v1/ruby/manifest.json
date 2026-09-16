@@ -1,0 +1,34 @@
+{
+  "build_command": [
+    "ruby",
+    "-c",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-003-effect.canonical",
+    "conformance/vectors/envelope-003-effect.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "RUBY:POSTCONDITION:effect_requires_persistence_class",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-003-effect.expected.json",
+  "input_vector": "conformance/vectors/envelope-003-effect.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "effect_requires_persistence_class",
+  "language": "Ruby",
+  "observable_contribution": "Rejects the effect vector if it names an effect_identity without a persistence_class, or if that class is outside REVERSIBLE, COMPENSATABLE, IRREVERSIBLE, UNKNOWN, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "ruby",
+  "responsibility": "Verify an effect record names its recovery class before the effect",
+  "run_command": [
+    "ruby",
+    "{source}",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/ruby/main.rb",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Ruby\""
+}

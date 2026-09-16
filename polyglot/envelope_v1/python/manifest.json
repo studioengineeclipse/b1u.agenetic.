@@ -1,0 +1,35 @@
+{
+  "build_command": [
+    "python3",
+    "-m",
+    "py_compile",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "Python:POSTCONDITION:payload_contains_no_float",
+  "helper_tools": [],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "payload_contains_no_float",
+  "language": "Python",
+  "observable_contribution": "Rejects the canonical vector if any numeric token outside a string literal carries a fraction or an exponent, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "python3",
+  "responsibility": "Verify no non-integer numeric literal reaches the digested form",
+  "run_command": [
+    "python3",
+    "{source}",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/python/main.py",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Python\""
+}

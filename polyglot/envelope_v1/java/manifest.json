@@ -1,0 +1,39 @@
+{
+  "build_command": [
+    "javac",
+    "-d",
+    "{outdir}",
+    "{source}"
+  ],
+  "dependencies": [
+    "contracts/b1-envelope-v1.json",
+    "conformance/vectors/envelope-001.canonical",
+    "conformance/vectors/envelope-001.expected.json"
+  ],
+  "digest_verification": "STDLIB",
+  "expected_output": "Java:POSTCONDITION:top_level_keys_are_ascending",
+  "helper_tools": [
+    "java"
+  ],
+  "input_contract": "contracts/b1-envelope-v1.json",
+  "input_expected": "conformance/vectors/envelope-001.expected.json",
+  "input_vector": "conformance/vectors/envelope-001.canonical",
+  "interface": "FILE_JSON_V1",
+  "invariant": "top_level_keys_are_ascending",
+  "language": "Java",
+  "observable_contribution": "Rejects the canonical vector if its top-level object keys are not in strictly ascending UTF-8 byte order, or if its bytes do not hash to the declared digest.",
+  "output_contract": "UTF8_LINE_POSTCONDITION_V1",
+  "required_tool": "javac",
+  "responsibility": "Verify top-level object keys are in ascending UTF-8 byte order",
+  "run_command": [
+    "java",
+    "-cp",
+    "{outdir}",
+    "B1EnvelopeJava",
+    "{contract}",
+    "{vector}",
+    "{expected}"
+  ],
+  "source": "polyglot/envelope_v1/java/B1EnvelopeJava.java",
+  "test_command": "python3 tools/verify_polyglot.py --root . --json --language \"Java\""
+}
