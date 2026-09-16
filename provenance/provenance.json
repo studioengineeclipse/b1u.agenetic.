@@ -1,0 +1,114 @@
+{
+  "schema": "b1-provenance-1",
+  "generated_for": "B1 Local foundation increment",
+  "inspection_date": "2026-09-16",
+  "inspection_mode": "read-only",
+  "statement": "No upstream source file is vendored into this repository. Every relationship below is design-derivation or interoperation. A B1 file that derives design from an upstream file must carry a 'Design-derived-from: <upstream_id>:<path>' comment naming it, and must appear in derived_files.",
+  "upstreams": [
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
+      "supplied_archive": "2b22e412-codex-main.zip",
+      "archive_sha256": "89b649348fab595cafc6a152d2db99417db177ea51339d558a71fdb01d98f330",
+      "archive_entries": 7673,
+      "license": "Apache-2.0",
+      "spdx": "Apache-2.0",
+      "license_path_in_archive": "codex-main/LICENSE",
+      "notice_path_in_archive": "codex-main/NOTICE",
+      "notice_declares": [
+        "OpenAI Codex, Copyright 2025 OpenAI",
+        "Ratatui (MIT), Copyright (c) 2016-2022 Florian Dehau, Copyright (c) 2023-2025 The Ratatui Developers"
+      ],
+      "vendored": false,
+      "trademark_use": false,
+      "redistribution_permitted": true
+    },
+    {
+      "id": "codex-security",
+      "name": "OpenAI Codex Security",
+      "supplied_archive": "d6575246-codex-security-main.zip",
+      "archive_sha256": "3322deac5d7891cbf16ebb62e1d62c8eb52febfb901c0c550174292c95e2b78c",
+      "archive_entries": 669,
+      "package": "@openai/codex-security@0.1.24",
+      "license": "Apache-2.0",
+      "spdx": "Apache-2.0",
+      "license_path_in_archive": "codex-security-main/LICENSE",
+      "notice_path_in_archive": null,
+      "vendored": false,
+      "trademark_use": false,
+      "redistribution_permitted": true
+    },
+    {
+      "id": "b1mu-omega13.9",
+      "name": "B1u-DQAS OmegaSigma13.9 Quantum-Fidelity",
+      "supplied_archive": "319cb740-B1mu-DQAS-Omega13.9-QuantumFidelity-13.9.0a1.zip",
+      "archive_sha256": "fde33c81e59800cac8767250981c9919ca142ad5fa7394ee096a8aff8ca6b230",
+      "archive_entries": 570,
+      "package_version": "13.9.0a1",
+      "runtime_version": "13.9.0-ref1",
+      "license": "All rights reserved. No patent, copyright, trademark, redistribution, sublicensing, or commercial-use license is granted.",
+      "spdx": "LicenseRef-B1mu-AllRightsReserved",
+      "license_path_in_archive": "LICENSE",
+      "notice_path_in_archive": null,
+      "vendored": false,
+      "trademark_use": false,
+      "redistribution_permitted": false,
+      "blocks_publication": true,
+      "blocker_note": "Grants no redistribution right. Apache-2.0 in this repository's LICENSE covers new B1 Local code only and does not relicense this archive. Relicensing is the rights holder's decision and has not been made."
+    }
+  ],
+  "derived_files": [
+    {
+      "path": "python/b1_protocol/canonical.py",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/serialization.py",
+      "relation": "design-derived",
+      "derived": "Canonical JSON rule: sorted keys, ensure_ascii=False, separators (\",\", \":\"), allow_nan=False, trailing newline, UTF-8."
+    },
+    {
+      "path": "crates/b1-protocol/src/canonical.rs",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/serialization.py",
+      "relation": "design-derived",
+      "derived": "Same canonical JSON rule, reimplemented in Rust to match byte-for-byte."
+    },
+    {
+      "path": "python/b1_state/journal.py",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/durable.py",
+      "relation": "design-derived",
+      "derived": "Append-only SQLite/WAL journal, SHA-256 prior->record digest chaining from a GENESIS anchor, committed head digest plus record count for truncation detection, wall-clock fields excluded from digested payloads.",
+      "divergence": "B1 uses one global chain over a single monotonic seq; upstream chains per (run_id, attempt, seq)."
+    },
+    {
+      "path": "crates/b1-state/src/journal.rs",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/durable.py",
+      "relation": "design-derived",
+      "derived": "Same root journal design in Rust.",
+      "divergence": "B1 uses one global chain over a single monotonic seq; upstream chains per (run_id, attempt, seq)."
+    },
+    {
+      "path": "tools/verify_polyglot.py",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "tools/verify_omega13_9_polyglot.py",
+      "relation": "design-derived",
+      "derived": "Manifest-driven fourteen-language conformance verification, unique responsibility and unique observable-contribution checks, exact expected-output matching, missing toolchain reported as UNKNOWN rather than promoted from source-file existence.",
+      "divergence": "B1 executes each manifest's declared build_command/run_command templates rather than hardcoded per-language commands, removes the build_command non-empty exemption, and targets dotnet instead of legacy csc/mono."
+    },
+    {
+      "path": "docs/decisions/ADR-0002-responses-wire-api.md",
+      "upstream_id": "codex",
+      "upstream_path": "codex-rs/model-provider-info/src/lib.rs",
+      "relation": "design-observation",
+      "derived": "Observation that WireApi has exactly one variant (Responses), that wire_api=\"chat\" is a hard deserialization error, and that the ollama-chat provider was removed."
+    },
+    {
+      "path": "docs/decisions/ADR-0005-codex-security-scope.md",
+      "upstream_id": "codex-security",
+      "upstream_path": "sdk/typescript/src/server/embeddings.ts",
+      "relation": "design-observation",
+      "derived": "Observation that the embeddings endpoint is hardcoded to api.openai.com, making the scanner non-local."
+    }
+  ]
+}

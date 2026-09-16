@@ -1,0 +1,7 @@
+{
+  "canonical_byte_length": 433,
+  "canonical_sha256": "cdc519f15e9de970d19dd7520148fb12fa9798dc5e0da6847a77fb51084919af",
+  "note": "Baseline non-effect envelope. Establishes key ordering, integer and boolean rendering, and the trailing newline.",
+  "payload_digest": "208307a28c797ee2b0b9429a1d2f9a96775e1a506e4e9d156c6bae696e0bbebe",
+  "vector": "envelope-001"
+}

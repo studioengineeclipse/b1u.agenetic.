@@ -1,0 +1,7 @@
+{
+  "canonical_byte_length": 609,
+  "canonical_sha256": "9923ebd590cc397e25cf5b1b35c60c3a3d80be336e50db7b8616910c1f80d80f",
+  "note": "Effect envelope. Demonstrates that effect_identity drags authority_envelope_digest and persistence_class in with it, and that IN_DOUBT survives a successful receipt.",
+  "payload_digest": "f70a70015eccbecb55a1183d59b4860f474903b48fbfbf2c8e4a0b0415b747ee",
+  "vector": "envelope-003-effect"
+}

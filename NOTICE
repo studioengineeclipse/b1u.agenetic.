@@ -1,0 +1,24 @@
+B1 Local
+Copyright 2026 B1 Local contributors
+
+This product includes software developed as part of the B1 Local project and
+is licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product's design is derived from, and its components interoperate with,
+third-party works that carry their own licenses and notices. Those works are
+NOT relicensed by this NOTICE or by LICENSE. See THIRD_PARTY_NOTICES.md for the
+full list, the terms that apply to each, and a statement of what this project
+did and did not take from each.
+
+In particular:
+
+  - OpenAI Codex (Apache-2.0) and OpenAI Codex Security (Apache-2.0) are
+    upstream works studied and interoperated with by this project. Nothing in
+    this repository is endorsed by or affiliated with OpenAI, and no OpenAI
+    trademark, brand or product name is used here as a B1 mark.
+
+  - B1u-DQAS OmegaSigma13.9 "Quantum-Fidelity" is supplied under an
+    all-rights-reserved license that grants no redistribution, sublicensing or
+    commercial-use rights. No part of it is vendored into this repository. The
+    Apache-2.0 grant in LICENSE covers only new B1 Local code and does not
+    relicense that archive.

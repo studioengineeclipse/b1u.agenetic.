@@ -1,0 +1,7 @@
+{
+  "canonical_byte_length": 476,
+  "canonical_sha256": "fd133677830de8dbcbfb38f913ec515acffe8f4d05634e2d2b0522b582cb13f8",
+  "note": "Non-ASCII keys spanning Latin-1, Greek, Han and a non-BMP codepoint. Key order must be identical under Python sort_keys (code point) and Rust BTreeMap (UTF-8 byte order), and non-ASCII must be emitted raw, not escaped.",
+  "payload_digest": "7fdfa3df4e086df73b7140494cb061c4aa2ac57851861bafa66ffe2fcdaf43db",
+  "vector": "envelope-002-unicode-keys"
+}

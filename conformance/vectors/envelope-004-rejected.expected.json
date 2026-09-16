@@ -1,0 +1,26 @@
+{
+  "must_reject": [
+    {
+      "case": "float",
+      "error": "float values are not digestable. Python renders floats via repr() and Rust serde_json via Ryu; these can disagree, which would break cross-language digest equality. Use an integer, or a decimal string."
+    },
+    {
+      "case": "nested_float",
+      "error": "float values are not digestable. Python renders floats via repr() and Rust serde_json via Ryu; these can disagree, which would break cross-language digest equality. Use an integer, or a decimal string."
+    },
+    {
+      "case": "null",
+      "error": "null is not digestable. After canonicalisation an absent key and an explicit null are indistinguishable in several target languages. Omit the key."
+    },
+    {
+      "case": "non_string_key",
+      "error": "object keys must be strings, got int"
+    },
+    {
+      "case": "empty_key",
+      "error": "object keys must be non-empty"
+    }
+  ],
+  "note": "Values that must NOT produce canonical bytes in any language. A language peer that accepts any of these is non-conformant.",
+  "vector": "envelope-004-rejected"
+}

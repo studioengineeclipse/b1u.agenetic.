@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://b1.local/schemas/b1-event-envelope-v1.schema.json",
+  "title": "B1 Event Envelope v1",
+  "description": "The canonical cross-language event record for B1 Local. Every consequential event in the root journal is one of these. The envelope keeps origin, authority, executor and effect as four separate dimensions so that none of them can be silently inferred from another.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "origin",
+    "causal_parents",
+    "program_identity",
+    "execution_identity",
+    "attempt_identity",
+    "epoch",
+    "evidence_refs",
+    "epistemic_status",
+    "payload_digest",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "b1-event-envelope-1",
+      "description": "Exact schema identity. A reader that does not recognise this value must refuse the record rather than guess at it."
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "Stable identity of this event. Unique within a root journal."
+    },
+    "origin": {
+      "enum": ["U", "M", "P", "E"],
+      "description": "Where the event came from. U = user-literal, M = model-derived, P = platform-generated, E = emergent. Origin never determines authority, executor or effect."
+    },
+    "causal_parents": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+      "uniqueItems": true,
+      "description": "event_ids this event causally depends on. Empty for a root cause. Parents must already exist in the journal."
+    },
+    "program_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which logical program or workflow this belongs to."
+    },
+    "execution_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which concrete executor, runtime, process, provider or agent acted. A different executor may produce a materially different effect."
+    },
+    "attempt_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which specific attempt produced this record. A retry is a new attempt, never an overwrite of the previous one."
+    },
+    "effect_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Present only for events that concern a persistent effect. Two attempts at the same intended effect share one effect_identity, which is what makes duplicate-effect detection possible."
+    },
+    "authority_envelope_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the authority envelope that authorised this effect. Required whenever effect_identity is present: an effect without a bound authority digest is unauthorised by construction."
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic fencing token. A record carrying an epoch below the current fence is stale and must be rejected, not merged."
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "References to evidence supporting this record. A provider's success return is evidence, never proof."
+    },
+    "epistemic_status": {
+      "enum": ["VERIFIED", "WORKING_ASSUMPTION", "UNKNOWN", "IN_DOUBT"],
+      "description": "How well supported this record's claim is. VERIFIED requires observed evidence, not a successful invocation."
+    },
+    "persistence_class": {
+      "enum": ["REVERSIBLE", "COMPENSATABLE", "IRREVERSIBLE", "UNKNOWN"],
+      "description": "Recovery characteristics, classified before execution. Required whenever effect_identity is present, so recovery limits are known before authorisation rather than discovered after."
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 over the canonical bytes of payload. Binds the payload to the chained record."
+    },
+    "payload": {
+      "$ref": "#/$defs/digestable",
+      "description": "The event body. Constrained by the digestable rules below so that every language can reproduce its canonical bytes identically."
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "An effect record must name both the authority that permitted it and the recovery class it was classified under, before it happened.",
+      "if": { "required": ["effect_identity"] },
+      "then": { "required": ["authority_envelope_digest", "persistence_class"] }
+    }
+  ],
+  "$defs": {
+    "digestable": {
+      "$comment": "Floats are excluded on purpose. Python renders them via repr() and Rust serde_json via Ryu; for some values these disagree, which would silently break the cross-language digest equality the whole state fabric rests on. Numerics are integers, or decimal strings when fractional precision is needed. Null is excluded because a missing key and an explicit null are indistinguishable after canonicalisation in several of the fourteen target languages.",
+      "anyOf": [
+        { "type": "string" },
+        { "type": "integer" },
+        { "type": "boolean" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/digestable" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/digestable" },
+          "propertyNames": { "minLength": 1 }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "attempt_identity": "attempt-1",
+  "causal_parents": [
+    "evt-001"
+  ],
+  "epistemic_status": "UNKNOWN",
+  "epoch": 2,
+  "event_id": "evt-002",
+  "evidence_refs": [],
+  "execution_identity": "rust-core-1",
+  "origin": "M",
+  "payload": {
+    "a": "ascii-first",
+    "z": "ascii-last",
+    "é": "e-acute",
+    "ü": "u-umlaut",
+    "Ω": "omega",
+    "中文": "han",
+    "🧮": "abacus-outside-bmp"
+  },
+  "payload_digest": "7fdfa3df4e086df73b7140494cb061c4aa2ac57851861bafa66ffe2fcdaf43db",
+  "program_identity": "b1-local",
+  "schema_version": "b1-event-envelope-1"
+}
