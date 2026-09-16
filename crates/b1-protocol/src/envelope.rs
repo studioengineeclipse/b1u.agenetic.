@@ -197,12 +197,15 @@ impl Envelope {
                 self.event_id
             )));
         }
-        for name @ (label, value) in [
+        // Program, execution and attempt identity are three separate dimensions:
+        // which logical workflow, which concrete executor, which specific try.
+        // A retry is a new attempt and may be a new executor, so none of these
+        // may be blank and stand in for another.
+        for (label, value) in [
             ("program_identity", &self.program_identity),
             ("execution_identity", &self.execution_identity),
             ("attempt_identity", &self.attempt_identity),
         ] {
-            let _ = name;
             if value.is_empty() {
                 return Err(EnvelopeError(format!("{label} must be non-empty")));
             }
