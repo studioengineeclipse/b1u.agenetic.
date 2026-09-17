@@ -50,6 +50,8 @@ The Apache-2.0 grant in `LICENSE` covers new B1 Local code only.
 | `python/b1_state/journal.py` | `src/b1mu/durable.py` | Append-only SQLite/WAL journal; SHA-256 `prior_record_digest` → `record_digest` chaining from a `GENESIS` anchor; committed head digest **and record count** for truncation detection; wall-clock fields excluded from digested payloads |
 | `crates/b1-state/src/journal.rs` | same | The same design in Rust |
 | `tools/verify_polyglot.py` | `tools/verify_omega13_9_polyglot.py` | Manifest-driven fourteen-language verification; unique-responsibility and unique-contribution checks; exact expected-output matching; missing toolchain reported as `UNKNOWN` rather than promoted from source-file existence |
+| `python/b1_authority/authority.py` | `src/b1mu/work/store.py` | Effect-time staleness by digest comparison — upstream raises *"run context changed; re-plan before effects"* at `store.py:737-740` when a context digest no longer matches |
+| `python/b1_authority/gate.py` | `src/b1mu/work/runtime.py` | Approval → one-time permit → fence → permit-digest-bound transition proof. Upstream validates and consumes an approval in one transaction (`store.py:766-772`: a conditional `UPDATE` plus a `changes()` check), issues a per-domain monotonic fence, allows one active permit per target, and checks a proof's permit digest, capability, target and epochs |
 
 ### Deliberate divergences
 

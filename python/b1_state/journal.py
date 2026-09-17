@@ -183,6 +183,29 @@ class RootJournal:
     def _lease(self) -> "RootJournal._Lease":
         return RootJournal._Lease(self._conn)
 
+    def lease(self) -> "RootJournal._Lease":
+        """Acquire the single write lease.
+
+        Public because a component that needs several journal appends and its
+        own table writes to land as one atomic unit -- the commit gate is the
+        one that does -- must hold *this* lease rather than opening a second
+        transaction. Two leases would be two linearization points, which is the
+        split-brain the single-writer design exists to prevent.
+
+        Inside a lease, use :meth:`append_in_lease` rather than :meth:`append`.
+        """
+        return self._lease()
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """The underlying connection, shared deliberately.
+
+        A component holding its own tables in this database shares the
+        connection so that its writes and the journal's commit or roll back
+        together. Anything writing here must hold the lease.
+        """
+        return self._conn
+
     def head(self) -> tuple[str, int, int]:
         """Committed ``(head_digest, record_count, max_epoch)``."""
         row = self._conn.execute(
@@ -207,70 +230,81 @@ class RootJournal:
           is the duplicate-effect guard, and it is the reason effect_identity is
           a first-class column rather than a field buried in the payload.
         """
+        with self._lease():
+            return self.append_in_lease(envelope)
+
+    def append_in_lease(self, envelope: Envelope) -> JournalRecord:
+        """Append while the caller already holds the lease.
+
+        Same validation as :meth:`append`; the only difference is who owns the
+        transaction. Split out so a caller combining journal appends with its
+        own table writes gets one atomic unit and one linearization point,
+        rather than being tempted to write rows directly and skip these checks.
+        """
         try:
             envelope.validate()
         except EnvelopeError as exc:
             raise JournalError(f"refusing to append an invalid envelope: {exc}") from exc
 
-        with self._lease() as conn:
-            head_digest, record_count, max_epoch = self.head()
+        conn = self._conn
+        head_digest, record_count, max_epoch = self.head()
 
-            if conn.execute(
-                "SELECT 1 FROM root_journal WHERE event_id=?", (envelope.event_id,)
+        if conn.execute(
+            "SELECT 1 FROM root_journal WHERE event_id=?", (envelope.event_id,)
+        ).fetchone():
+            raise JournalError(
+                f"event_id {envelope.event_id!r} is already in the journal; "
+                f"history cannot hold two records with one identity"
+            )
+
+        for parent in envelope.causal_parents:
+            if not conn.execute(
+                "SELECT 1 FROM root_journal WHERE event_id=?", (parent,)
             ).fetchone():
                 raise JournalError(
-                    f"event_id {envelope.event_id!r} is already in the journal; "
-                    f"history cannot hold two records with one identity"
+                    f"causal parent {parent!r} is not in the journal; "
+                    f"appending would create a record whose lineage cannot be replayed"
                 )
 
-            for parent in envelope.causal_parents:
-                if not conn.execute(
-                    "SELECT 1 FROM root_journal WHERE event_id=?", (parent,)
-                ).fetchone():
-                    raise JournalError(
-                        f"causal parent {parent!r} is not in the journal; "
-                        f"appending would create a record whose lineage cannot be replayed"
-                    )
+        if envelope.epoch < max_epoch:
+            raise StaleEpoch(
+                f"event {envelope.event_id!r} carries epoch {envelope.epoch}, "
+                f"below the committed fence {max_epoch}; a superseded attempt "
+                f"must not land after the fence moved on"
+            )
 
-            if envelope.epoch < max_epoch:
-                raise StaleEpoch(
-                    f"event {envelope.event_id!r} carries epoch {envelope.epoch}, "
-                    f"below the committed fence {max_epoch}; a superseded attempt "
-                    f"must not land after the fence moved on"
+        if envelope.effect_identity is not None:
+            clash = conn.execute(
+                "SELECT event_id,epoch FROM root_journal WHERE effect_identity=? "
+                "ORDER BY seq DESC LIMIT 1",
+                (envelope.effect_identity,),
+            ).fetchone()
+            if clash is not None and int(clash["epoch"]) >= envelope.epoch:
+                raise JournalError(
+                    f"effect {envelope.effect_identity!r} was already recorded by "
+                    f"{clash['event_id']!r} at epoch {clash['epoch']}; a retry must "
+                    f"carry a newer fence, not repeat the same one"
                 )
 
-            if envelope.effect_identity is not None:
-                clash = conn.execute(
-                    "SELECT event_id,epoch FROM root_journal WHERE effect_identity=? "
-                    "ORDER BY seq DESC LIMIT 1",
-                    (envelope.effect_identity,),
-                ).fetchone()
-                if clash is not None and int(clash["epoch"]) >= envelope.epoch:
-                    raise JournalError(
-                        f"effect {envelope.effect_identity!r} was already recorded by "
-                        f"{clash['event_id']!r} at epoch {clash['epoch']}; a retry must "
-                        f"carry a newer fence, not repeat the same one"
-                    )
-
-            record_digest = chain_digest(head_digest, envelope)
-            conn.execute(
-                "INSERT INTO root_journal"
-                "(event_id,effect_identity,epoch,envelope_json,prior_record_digest,record_digest)"
-                " VALUES(?,?,?,?,?,?)",
-                (
-                    envelope.event_id,
-                    envelope.effect_identity,
-                    envelope.epoch,
-                    envelope.canonical_bytes().decode("utf-8"),
-                    head_digest,
-                    record_digest,
-                ),
-            )
-            seq = int(conn.execute("SELECT last_insert_rowid() AS s").fetchone()["s"])
-            conn.execute(
-                "UPDATE root_head SET head_digest=?,record_count=?,max_epoch=? WHERE id=1",
-                (record_digest, record_count + 1, max(max_epoch, envelope.epoch)),
-            )
+        record_digest = chain_digest(head_digest, envelope)
+        conn.execute(
+            "INSERT INTO root_journal"
+            "(event_id,effect_identity,epoch,envelope_json,prior_record_digest,record_digest)"
+            " VALUES(?,?,?,?,?,?)",
+            (
+                envelope.event_id,
+                envelope.effect_identity,
+                envelope.epoch,
+                envelope.canonical_bytes().decode("utf-8"),
+                head_digest,
+                record_digest,
+            ),
+        )
+        seq = int(conn.execute("SELECT last_insert_rowid() AS s").fetchone()["s"])
+        conn.execute(
+            "UPDATE root_head SET head_digest=?,record_count=?,max_epoch=? WHERE id=1",
+            (record_digest, record_count + 1, max(max_epoch, envelope.epoch)),
+        )
 
         return JournalRecord(
             seq=seq,

@@ -92,6 +92,8 @@ upstream counterpart in a `Design-derived-from:` comment. The derivations are:
 | `python/b1_state/journal.py` | `src/b1mu/durable.py` | Append-only SQLite/WAL journal; SHA-256 `prior_record_digest` -> `record_digest` chaining from a `GENESIS` anchor; committed head digest + record count for truncation detection; exclusion of wall-clock fields from digested payloads. |
 | `crates/b1-state/src/journal.rs` | same | The same design in Rust. |
 | `tools/verify_polyglot.py` | `tools/verify_omega13_9_polyglot.py` | Manifest-driven fourteen-language conformance verification; unique-responsibility and unique-contribution checks; exact expected-output matching; missing toolchain reported as `UNKNOWN` rather than promoted from source-file existence. B1's port additionally executes each manifest's declared commands, removes the `build_command` non-empty exemption, and targets `dotnet` instead of `csc`/`mono`. See ADR in `docs/OMEGA13-ANALYSIS.md` section 20. |
+| `python/b1_authority/authority.py` | `src/b1mu/work/store.py` | Effect-time staleness detection by digest comparison, per `store.py:737-740`. B1 moves the digest into the authority envelope itself and adds a plan digest alongside the state digest. |
+| `python/b1_authority/gate.py` | `src/b1mu/work/runtime.py` | Approval to one-time permit to fence to permit-digest-bound transition proof, including validate-and-consume in one transaction (`store.py:766-772`), a per-domain monotonic fence, and one active permit per target. B1 revalidates authority a second time at consume time, and refuses any retry of an effect whose outcome is unknown until real state has been read back. |
 
 **Deliberate divergences** (B1 Local does not copy these choices):
 

@@ -89,6 +89,22 @@
       "divergence": "B1 uses one global chain over a single monotonic seq; upstream chains per (run_id, attempt, seq)."
     },
     {
+      "path": "python/b1_authority/authority.py",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/work/store.py",
+      "relation": "design-derived",
+      "derived": "Effect-time staleness detection by digest comparison. Upstream raises 'run context changed; re-plan before effects' at store.py:737-740 when a project context digest no longer matches.",
+      "divergence": "B1 moves the digest inside the authority envelope so the envelope is self-describing, and adds a plan digest alongside the state digest. B1 also bounds authority by an explicit scope whose matcher does not let a wildcard cross a directory boundary."
+    },
+    {
+      "path": "python/b1_authority/gate.py",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/work/runtime.py",
+      "relation": "design-derived",
+      "derived": "Approval to one-time permit to fence to permit-digest-bound transition proof. Upstream's SovereignWorkRuntime validates and consumes an approval in one transaction (store.py:766-772, a conditional UPDATE plus a changes() check), issues a per-domain monotonic fence, allows one active permit per target, and binds a transition proof to a permit digest with capability, target and epochs checked.",
+      "divergence": "B1 revalidates the authority a second time at consume time, not only at claim time, so an authorization that goes stale while the executor is working is refused before the effect is recorded. B1 also flags an effect identity for reconciliation on an UNKNOWN receipt and refuses any further permit for it until real state has been read back with cited evidence."
+    },
+    {
       "path": "tools/verify_polyglot.py",
       "upstream_id": "b1mu-omega13.9",
       "upstream_path": "tools/verify_omega13_9_polyglot.py",
