@@ -654,26 +654,81 @@ mod tests {
             postcondition_evidence: vec![],
         };
 
-        let observed = Some("b".repeat(64));
-        let cases: &[(ReceiptStatus, bool, Option<String>, (Outcome, &str, bool))] = &[
-            (ReceiptStatus::Succeeded, true, observed.clone(), (Outcome::Verified, "VERIFIED", false)),
-            (ReceiptStatus::Succeeded, false, None, (Outcome::InDoubt, "IN_DOUBT", true)),
-            (ReceiptStatus::Failed, false, observed.clone(), (Outcome::NoEffect, "VERIFIED", false)),
-            (ReceiptStatus::Failed, false, None, (Outcome::InDoubt, "IN_DOUBT", true)),
-            (ReceiptStatus::Unknown, false, None, (Outcome::InDoubt, "IN_DOUBT", true)),
-            // Unknown stays InDoubt even with an observation.
-            (ReceiptStatus::Unknown, true, observed.clone(), (Outcome::InDoubt, "IN_DOUBT", true)),
+        /// One row of the projection table: what the executor reported, and
+        /// what the gate must conclude from it.
+        struct Case {
+            receipt: ReceiptStatus,
+            postcondition_verified: bool,
+            observed: Option<String>,
+            expected: (Outcome, &'static str, bool),
+        }
+
+        let seen = || Some("b".repeat(64));
+        let cases = [
+            Case {
+                receipt: ReceiptStatus::Succeeded,
+                postcondition_verified: true,
+                observed: seen(),
+                expected: (Outcome::Verified, "VERIFIED", false),
+            },
+            // A provider reporting success with an unverified postcondition is
+            // the most common way a system believes something it has not
+            // established.
+            Case {
+                receipt: ReceiptStatus::Succeeded,
+                postcondition_verified: false,
+                observed: None,
+                expected: (Outcome::InDoubt, "IN_DOUBT", true),
+            },
+            // The only path to NoEffect, and it requires an observation.
+            Case {
+                receipt: ReceiptStatus::Failed,
+                postcondition_verified: false,
+                observed: seen(),
+                expected: (Outcome::NoEffect, "VERIFIED", false),
+            },
+            // A reported failure alone does not prove nothing happened.
+            Case {
+                receipt: ReceiptStatus::Failed,
+                postcondition_verified: false,
+                observed: None,
+                expected: (Outcome::InDoubt, "IN_DOUBT", true),
+            },
+            Case {
+                receipt: ReceiptStatus::Unknown,
+                postcondition_verified: false,
+                observed: None,
+                expected: (Outcome::InDoubt, "IN_DOUBT", true),
+            },
+            // Unknown stays InDoubt even with an observation: the observation
+            // and the receipt may describe different attempts.
+            Case {
+                receipt: ReceiptStatus::Unknown,
+                postcondition_verified: true,
+                observed: seen(),
+                expected: (Outcome::InDoubt, "IN_DOUBT", true),
+            },
         ];
 
-        for (receipt, verified, obs, expected) in cases {
+        for case in &cases {
             let proof = TransitionProof {
-                receipt_status: *receipt,
-                postcondition_verified: *verified,
-                observed_effect_digest: obs.clone(),
-                postcondition_evidence: if *verified { vec!["e".into()] } else { vec![] },
+                receipt_status: case.receipt,
+                postcondition_verified: case.postcondition_verified,
+                observed_effect_digest: case.observed.clone(),
+                postcondition_evidence: if case.postcondition_verified {
+                    vec!["e".into()]
+                } else {
+                    vec![]
+                },
                 ..base.clone()
             };
-            assert_eq!(project_outcome(&proof), *expected, "case {receipt:?}/{verified}");
+            assert_eq!(
+                project_outcome(&proof),
+                case.expected,
+                "case {:?}/{}",
+                case.receipt,
+                case.postcondition_verified
+            );
         }
     }
 }
