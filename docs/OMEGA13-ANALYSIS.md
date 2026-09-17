@@ -49,17 +49,18 @@ property holds" that the contract's §3 forbids.
 
 | Category | Count | Notes |
 |---|---|---|
-| VERIFIED | 7 success criteria as scored above; 15 findings in §4 | Each cites a path, a line, or a verifier run in this session |
-| WORKING_ASSUMPTION | 4 | Listed in §5 |
-| UNKNOWN | 5 | Listed in §6 |
+| VERIFIED | 7 success criteria as scored above; 18 findings in §4 | Each cites a path, a line, or a verifier run in this session |
+| WORKING_ASSUMPTION | 3 | Listed in §5 |
+| UNKNOWN | 4 | Listed in §6 |
 | IN_DOUBT | 2 | Listed in §6 |
 
-One entry deserves separate mention because the handoff presents it as settled: the claim
-*"45/45 focused tests passed on 2026-09-15"* for ΩΣ13.9 is **supplied evidence, not re-verified**.
-Neither `numpy` (a hard dependency declared in the archive's `pyproject.toml`) nor `pytest` is
-installed in this container, so the suite could not be run. Re-running it needs
-`pip install numpy pytest`, a persistent environment change that has not been authorised. It is
-recorded as WORKING_ASSUMPTION, not VERIFIED, and §5 says so.
+**Upgraded on 2026-09-17.** The first pass recorded the handoff's *"45/45 focused tests passed"*
+claim as WORKING_ASSUMPTION because `numpy` and `pytest` were absent and installing them is a
+persistent environment change. With that install authorised, the archive's suite was run: **646
+tests passed, 0 failed, in 67 seconds**, and all fourteen of its own verifiers exit 0. That is a
+stronger result than the claim it replaces, and it also closes the handoff's own note that an
+earlier full run *"progressed substantially but timed out before completion"* with its remainder
+left UNKNOWN. §4.9 records it.
 
 ## 4. Verified Facts
 
@@ -189,22 +190,80 @@ Present (10): `cc`, `c++`, `javac`/`java`, `python3`, `node`, `go`, `rustc`/`car
 `ruby`. Absent (4): `kotlinc`, `swiftc`, `dotnet`, `dart`. The OmniBook's availability will
 differ; the harness reports what it measures rather than what it hopes.
 
+### 4.9 ΩΣ13.9 re-verified — supersedes the handoff's test claim
+
+Measured 2026-09-17 with `numpy` 2.4.6 and `pytest` 9.1.1 installed against the archive's declared
+requirement of `numpy>=2.0,<3`.
+
+**Full test suite: 646 passed, 0 failed, 67.28s.** The handoff reported 45 focused tests passing
+and noted that an earlier *full* run timed out before completion, correctly leaving the remainder
+UNKNOWN. That remainder is now measured. The archive is in better shape than its own handoff
+claimed.
+
+**All fourteen of the archive's verifiers exit 0.** On first attempt four appeared to fail; that
+was an invocation error on my part, not a defect — `verify_omega13_release.py` and
+`verify_omega13_autonomous_upgrade.py` take a positional root rather than `--root`,
+`verify_skill_runtime.py` accepts only `--structural-only`, and `verify_omega12.py` requires
+`--baseline` and `--json`. Worth recording because "four verifiers fail" is exactly the kind of
+finding that would have been wrong and damaging to report.
+
+| Verifier | Result |
+|---|---|
+| `verify_omega13_release.py` | 1997 checks, 0 failures |
+| `verify_omega13_autonomous_upgrade.py` | 52 checks, 0 failures, baseline 1997 |
+| `verify_omega13_9_polyglot.py` | 10 POSTCONDITION_VERIFIED, 4 UNKNOWN, 0 errors |
+| `verify_skill_runtime.py` | 14 superpowers, 28 workflows |
+| 9 others (13.5 integrity, 13.6, 13.7, 13.8, 13.9 quantum-fidelity, autonomy, qx, spectral, work extension) | exit 0 |
+| `verify_omega12.py` | 1092/1099; 7 reported failures — analysed below |
+
+Upstream's polyglot verifier independently reports **the same 10/4 split** this repository's
+harness reports, which is a useful cross-check that B1's port did not change the answer while
+changing the mechanism.
+
+**The seven `verify_omega12.py` failures are not regressions.** That verifier targets the
+superseded ΩΣ12 generation. Five failures are it correctly observing that the tree has moved on:
+`language version 2.2 vs 1.0`, `ir 7 vs 1`, `proof 9 vs 1`, `adapter abi 4 vs 1`,
+`omega generation 13 vs 12`.
+
+The remaining two are more interesting, and they are a *check* defect rather than a *substance*
+defect. Lines 285-286 assert on exact prose:
+
+```python
+v.check("README physical-quantum honesty", "does not claim physical quantum computation" in readme)
+v.check("README capability-authority boundary", "Capability does not imply authority" in readme)
+```
+
+Neither literal string is in the 13.9 README. Both guarantees are, reworded and arguably
+strengthened: line 125 reads *"Physical quantum execution requires observed backend evidence,
+operation-bound capability, freshness, an execution receipt, and objective postcondition evidence.
+A provider receipt alone is insufficient"*; line 88 reads *"skill invocation != authority"*, line
+186 *"never grants capability authority or mutation budget"*, and line 27 carries
+`CAPABILITY != AUTHORITY` in the separation chain.
+
+So the guarantee survived the rewrite and the check did not. This is the same failure mode as the
+`b1mu.toml` finding in §4.6: the archive's *checks* have drifted from the archive's *substance* in
+two independent places. A check that greps for prose is brittle by construction, and a check
+asserting a property should assert the property.
+
+One further observation: `verify_omega12.py` reports `failed=7` and still **exits 0**. For a
+reporting tool aimed at a superseded generation that may well be deliberate, but it means a reader
+or a CI job consulting only the exit code learns nothing about those seven.
+
 ## 5. Working Assumptions
 
-1. **ΩΣ13.9's "45/45 focused tests passed" holds.** Supplied by the handoff, not re-run here
-   (`numpy` and `pytest` absent). The static reading of `durable.py`, `work/store.py` and
-   `work/runtime.py` is consistent with the claim, which is why this is a working assumption
-   rather than IN_DOUBT — but consistency is not execution.
-2. **UTF-8 byte order equals Unicode code-point order, so Python `sort_keys` and Rust `BTreeMap`
+1. **UTF-8 byte order equals Unicode code-point order, so Python `sort_keys` and Rust `BTreeMap`
    agree on key order.** This is true by UTF-8's construction, and `envelope-002-unicode-keys`
    exercises Latin-1, Greek, Han and a non-BMP character to hold it up. It is listed here rather
    than under VERIFIED because three vectors are evidence, not a proof over all inputs.
-3. **The four unobserved languages' consumers are correct.** Kotlin, Swift, C# and Dart sources are
+2. **The four unobserved languages' consumers are correct.** Kotlin, Swift, C# and Dart sources are
    written and reviewed but never executed. This is the weakest assumption in the pass and the one
    most likely to be wrong; see §13 for the risk and §19 for the recovery.
-4. **`rusqlite` with `bundled` will build on Windows ARM64.** It builds here on x86-64 Linux and
+3. **`rusqlite` with `bundled` will build on Windows ARM64.** It builds here on x86-64 Linux and
    compiles SQLite from C source, so it needs only a working C toolchain — but that is an
    inference from how it works, not an observation on the target.
+
+*Removed 2026-09-17:* "ΩΣ13.9's 45/45 claim holds" was assumption 1 in the first pass. It is now
+VERIFIED and exceeded — 646/646 — per §4.9.
 
 ## 6. UNKNOWN / IN_DOUBT
 
@@ -215,13 +274,13 @@ differ; the harness reports what it measures rather than what it hopes.
    that machine. The handoff correctly declines to invent these and so does this pass.
 2. **Whether the four absent-toolchain consumers execute correctly.** Not a code-quality
    statement; a statement that nobody has run them.
-3. **Whether ΩΣ13.9's full test suite passes.** The handoff reports an earlier full run that
-   "progressed substantially but timed out before completion". Its unexecuted remainder was
-   correctly left UNKNOWN then and remains UNKNOWN now.
-4. **What a chat-completions → Responses translation must cover for streaming, tool calls and
+3. **What a chat-completions → Responses translation must cover for streaming, tool calls and
    reasoning items.** The shim is `PLAN_READY`; its hard cases have not been mapped.
-5. **Whether any B1 workload benefits from the Hexagon NPU.** See IN_DOUBT 2 for the prior
+4. **Whether any B1 workload benefits from the Hexagon NPU.** See IN_DOUBT 2 for the prior
    question.
+
+*Resolved 2026-09-17:* "Whether ΩΣ13.9's full test suite passes" was UNKNOWN 3 in the first pass.
+It passes: 646/646, per §4.9.
 
 **IN_DOUBT — evidence exists but does not establish current validity.**
 
@@ -459,7 +518,7 @@ for ordering Phase B before Phase D even though they are otherwise independent.
 | Need | For | Status |
 |---|---|---|
 | `kotlinc`, `swiftc`, `dotnet`, `dart` | Observing the remaining four consumers | Absent here |
-| `numpy`, `pytest` | Re-verifying ΩΣ13.9's 45/45 claim | Absent; installing is a persistent environment change, unauthorised |
+| ~~`numpy`, `pytest`~~ | ~~Re-verifying ΩΣ13.9's claim~~ | **Established 2026-09-17** — installed under explicit authorisation; §4.9 records the result. Not a dependency of B1 Local itself, which remains standard-library-only |
 | The actual OmniBook 3 | Every performance number in Phase D | Not reachable from here |
 | A local model file | Phase D | Downloading is a persistent effect requiring authorisation |
 | Windows ARM64 toolchain | Target-platform builds | Codex ships `aarch64-pc-windows-msvc` in `rust-release-windows.yml`, `dotslash-config.json` and `codex-rs/.cargo/config.toml`, so the target is real; B1 has not built for it |
@@ -562,9 +621,12 @@ inputs. They are not a proof over all inputs, and no claim here should be read a
 
 **Current state: `PLAN_READY` for everything outside this repository.**
 
-Persistent effects taken this session, all local and all within the approved scope: files created
-in `/home/user/b1u.agenetic.`, and four commits on `claude/b1-local-omega13-handoff-auv8bc`.
-Classification: REVERSIBLE (git history, local).
+Persistent effects taken, all local and all within the approved scope: files created in
+`/home/user/b1u.agenetic.`, commits on `claude/b1-local-omega13-handoff-auv8bc` and a push of that
+branch to `origin` (REVERSIBLE — git history, and a branch that can be deleted), plus
+`pip install numpy pytest` into this ephemeral container on 2026-09-17 under explicit
+authorisation (REVERSIBLE — the container is discarded, and B1 Local itself remains
+standard-library-only).
 
 **Not authorised, and not done:**
 
@@ -572,8 +634,8 @@ Classification: REVERSIBLE (git history, local).
 - Relicensing ΩΣ13.9. It stays all-rights-reserved; `verify_provenance.py` reports publication
   BLOCKED, and will keep reporting it until the rights holder decides.
 - Downloading, installing or running any model.
-- `pip install numpy pytest` to re-verify ΩΣ13.9's suite — a persistent environment change.
-- Editing the ΩΣ13.9 archive, including the `b1mu.toml` defect in §4.6.
+- Editing the ΩΣ13.9 archive, including the `b1mu.toml` defect in §4.6 and the two stale prose
+  checks in §4.9.
 - Any external write, transmission, account change or configuration change.
 
 Nothing in this repository claims `VERIFIED` for anything unmeasured in this session. The handoff
@@ -622,6 +684,18 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 13 | Passing against correct data treated as participation proof | the inherited harness has no mutation suite | `verify_polyglot_mutations.py` |
 | 14 | Own defect: Ruby mutation produced malformed JSON | refusal reason read, not exit code | `drop_field` keeps JSON valid; invariant actually tested |
 | 15 | Own defect: JVM banner masked Java's refusal reason | same | `strip_noise` in `verify_polyglot.py` |
+| 16 | Own defect: `verify_all.py` reported a clean PASS while four languages went unobserved | reading the footer against the row detail | `PARTIAL` status added; exit 2 |
+| 17 | ΩΣ13.9's full suite was left UNKNOWN by the handoff | 646/646 passed in 67s once `numpy`/`pytest` were installed | §4.9; supersedes the 45/45 claim |
+| 18 | Two of ΩΣ13.9's release checks assert on exact prose, not on the property | `verify_omega12.py:285-286` greps literal strings absent from the 13.9 README, whose guarantees are present and reworded | §4.9; recorded for the rights holder, same failure mode as the `b1mu.toml` gap |
+
+Finding 18 generalises finding 5, and the pair is the most useful thing this pass learned about the
+archive: in two independent places the archive's **checks** have drifted from the archive's
+**substance**. Neither is a regression in behaviour. Both are checks that would not notice a real
+regression, which is the more expensive kind of defect.
+
+Finding 16 is worth separating from 14 and 15 because it is not a bug in a test — it is a
+reporting defect. The rows were correct and the footer was not, and the footer is where a reader
+stops.
 
 **Changes rejected during the pass, and why** — these matter as much as the retained ones:
 
@@ -681,9 +755,10 @@ Phase D (models) depends on the shim, which depends on conformance vectors that 
 Phase D also depends on hardware not reachable from here.
 
 **Important unknowns.** Every OmniBook performance number. Whether the four absent-toolchain
-consumers execute correctly. Whether ΩΣ13.9's full suite passes. What the shim's streaming and
-tool-call translation must cover. Whether the Hexagon NPU is reachable — IN_DOUBT, not UNKNOWN,
-because vendor claims exist without runtime proof.
+consumers execute correctly. What the shim's streaming and tool-call translation must cover.
+Whether the Hexagon NPU is reachable — IN_DOUBT, not UNKNOWN, because vendor claims exist without
+runtime proof. (ΩΣ13.9's full suite was on this list in the first pass; it is now measured at
+646/646.)
 
 **Major risks.** In order: a shim that mistranslates a call into a *different* effect, whose
 recovery is UNKNOWN and which argues for Phase B before Phase D; accidental vendoring of ΩΣ13.9,

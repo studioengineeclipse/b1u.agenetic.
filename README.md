@@ -107,6 +107,20 @@ Codex's own `responses-api-proxy` is a debugging proxy, not a translator. Also w
 skills *are* portable and cloud-free; its orchestrator is not.
 [ADR-0005](docs/decisions/ADR-0005-codex-security-scope.md).
 
+## The upstream archive, re-verified
+
+The ΩΣ13.9 archive this project derives design from was re-run on 2026-09-17: **646 tests passed,
+0 failed**, and all fourteen of its own verifiers exit 0. That supersedes the handoff's "45
+focused tests" figure and closes its note that an earlier full run had timed out with the
+remainder unmeasured.
+
+Two of its release checks assert on exact prose rather than on the property
+(`verify_omega12.py:285-286` greps literal strings that the 13.9 README has since reworded, while
+keeping and strengthening the guarantees). Paired with the `b1mu.toml` version gap, that is the
+same pattern twice: the archive's *checks* have drifted from its *substance*. Neither is a
+behavioural regression; both are checks that would not notice one. Recorded in
+`docs/OMEGA13-ANALYSIS.md` §4.9 for the rights holder — nothing in that archive was modified.
+
 ## Licensing
 
 New B1 Local code is Apache-2.0. **This does not relicense the B1μ-DQAS ΩΣ13.9 archive**, which is
