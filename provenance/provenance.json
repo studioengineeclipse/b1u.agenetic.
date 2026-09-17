@@ -105,12 +105,35 @@
       "divergence": "B1 revalidates the authority a second time at consume time, not only at claim time, so an authorization that goes stale while the executor is working is refused before the effect is recorded. B1 also flags an effect identity for reconciliation on an UNKNOWN receipt and refuses any further permit for it until real state has been read back with cited evidence."
     },
     {
+      "path": "crates/b1-authority/src/authority.rs",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/work/store.py",
+      "relation": "design-derived",
+      "derived": "Same effect-time staleness design as the Python peer, reimplemented in Rust. The two must agree on an authority envelope's canonical bytes, because that digest is what an effect record cites as its authorization.",
+      "divergence": "Same divergences as the Python peer: the digest lives inside the envelope, a plan digest sits alongside the state digest, and scope matching does not let a wildcard cross a directory boundary."
+    },
+    {
+      "path": "crates/b1-authority/src/gate.rs",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/work/runtime.py",
+      "relation": "design-derived",
+      "derived": "Same permit, fence and transition-proof design as the Python peer, reimplemented in Rust against the same database file and the same single write lease.",
+      "divergence": "Same divergences as the Python peer. Additionally, GateError carries a kind() discriminant so a verifier can tell a refusal by the gate's own rule from a refusal by a SQLite lock; a gate that only worked because of the driver's contention behaviour would be relying on an implementation detail."
+    },
+    {
       "path": "tools/verify_polyglot.py",
       "upstream_id": "b1mu-omega13.9",
       "upstream_path": "tools/verify_omega13_9_polyglot.py",
       "relation": "design-derived",
       "derived": "Manifest-driven fourteen-language conformance verification, unique responsibility and unique observable-contribution checks, exact expected-output matching, missing toolchain reported as UNKNOWN rather than promoted from source-file existence.",
       "divergence": "B1 executes each manifest's declared build_command/run_command templates rather than hardcoded per-language commands, removes the build_command non-empty exemption, and targets dotnet instead of legacy csc/mono."
+    },
+    {
+      "path": "docs/decisions/ADR-0006-commit-gate.md",
+      "upstream_id": "b1mu-omega13.9",
+      "upstream_path": "src/b1mu/work/runtime.py",
+      "relation": "design-observation",
+      "derived": "Records what the commit gate takes from SovereignWorkRuntime and what it adds: validate-and-consume as one linearization point, per-domain monotonic fencing, one active permit per target, and permit-digest-bound transition proofs, plus B1's second authority revalidation at consume time and its unknown-outcome reconciliation rule."
     },
     {
       "path": "docs/decisions/ADR-0002-responses-wire-api.md",

@@ -40,6 +40,7 @@ operating contract's §29 warns against.
 | 5 | Fourteen languages participate observably, with absence reported as absence | `tools/verify_polyglot.py` | **Partially met.** 10 POSTCONDITION_VERIFIED, 4 UNKNOWN — see §6 |
 | 6 | Each language's check demonstrably bites | `tools/verify_polyglot_mutations.py` | **Partially met.** 10 REFUSED with correct reasons, 4 UNKNOWN |
 | 7 | No claim of VERIFIED is made for anything unmeasured | this document; `tools/verify_all.py` reports PARTIAL | **Met.** |
+| 8 | No persistent effect without live authority; concurrent attempts commit at most one | `tools/verify_cross_language_gate.py`; 38 gate tests | **Met 2026-09-17.** A Rust process and a Python process race: 1 permit, 1 effect, heads AGREED |
 
 Criterion 5 and 6 are recorded as *partially* met on purpose. Ten of fourteen is what was
 observed. Reporting it as met would be the precise substitution of "the harness behaved" for "the
@@ -298,36 +299,45 @@ It passes: 646/646, per §4.9.
                               B1 LOCAL
                                  |
         +------------------------+------------------------+
-        |                        |                        |
-   BUILT THIS PASS          SEAM IDENTIFIED          NOT STARTED
-        |                        |                        |
-  b1-protocol             Dual-Core Commit Gate     model router + shim
-   canonical form          (write lease exists,      tournament runtime
-   Event Envelope v1        protocol does not)       security evidence
-        |                                            Tauri desktop
-  b1-state                                           pet overlay
-   root journal                                      B1_HOME private layer
-   SQLite/WAL
-   chain + head commitment
+        |                                                 |
+                    BUILT                            NOT STARTED
+        |                                                 |
+  b1-protocol                                     model router + shim
+   canonical form                                 tournament runtime
+   Event Envelope v1                              security evidence
+        |                                         Tauri desktop
+  b1-state                                        pet overlay
+   root journal, SQLite/WAL                       B1_HOME private layer
+   chain + head commitment                        projection topology
+        |                                         capability policy
+  b1-authority
+   authority envelopes
+   one-time fenced permits
+   effect-time revalidation (x2)
+   unknown-outcome reconciliation
         |
   polyglot/envelope_v1
-   14 consumers
-   14 unique invariants
+   14 consumers, 14 unique invariants
         |
   provenance + licence
-   manifest + verifier
+   manifest + bidirectional verifier
 ```
 
 The layering that matters, and the order it has to hold in:
 
 ```
-canonical bytes  ->  envelope identity  ->  chained record  ->  authoritative history
-     (agreed)           (validated)          (verified)            (replayable)
+canonical bytes -> envelope identity -> chained record -> authoritative history -> authorized effect
+    (agreed)          (validated)        (verified)          (replayable)            (gated)
 ```
 
 Each arrow is a place where two implementations could disagree, and each has a verifier. Nothing
 above this line can be trusted further than the line itself, which is why the line was built
-first.
+first, left to right.
+
+The last arrow is the one that turns the substrate into something an agent can safely act
+through. Everything to its left establishes what is true; the gate establishes what is *allowed*,
+and keeps the two apart — a security finding or a model's confidence can constrain what B1
+claims, never what B1 may do.
 
 ## 8. Fourteen-Language Participation Map
 
@@ -390,11 +400,18 @@ locally.
 | 2 | Either peer | Either peer | SQLite/WAL file + chained digests | `docs/decisions/ADR-0001-root-journal.md` | replay, then head comparison | FAIL, naming every finding | `verify_cross_language_journal.py` |
 | 3 | `conformance/vectors/` | 14 consumers | files on disk (`FILE_JSON_V1`) | `contracts/b1-envelope-v1.json` | exact stdout match | non-zero exit, reason on stderr | `verify_polyglot.py` |
 | 4 | `provenance/provenance.json` | the tree | `Design-derived-from:` markers | `THIRD_PARTY_NOTICES.md` | bidirectional — manifest to file *and* file to manifest | FAIL, naming the path | `verify_provenance.py` |
+| 5 | Either peer | The commit gate | one SQLite write lease on one file | `docs/decisions/ADR-0006-commit-gate.md` | authority digest agreement, then permit and effect counts | refusal carries a `kind()`, so losing by the rule is distinguishable from losing to a lock | `verify_cross_language_gate.py` |
 
-Four interfaces, deliberately. The handoff's §12 asks for the interface count to be kept as low
+Five interfaces, deliberately. The handoff's §12 asks for the interface count to be kept as low
 as possible, and the temptation with fourteen languages is fourteen bespoke integrations. Instead
 every consumer speaks interface 3, which is files on disk: the lowest-common-denominator transport
 that all fourteen support without a dependency.
+
+Interface 5 is the only one where the two peers are not merely required to *agree* but required to
+*contend*, and it is the only one whose failure mode is a duplicated real-world action rather than
+a mismatched digest. That is why its verifier asserts on the refusal's discriminant: a gate that
+happened to work because SQLite returned `SQLITE_BUSY` would pass a count-based check while
+resting on an implementation detail.
 
 Interface 4's bidirectionality is the one that does real work. Checking that every manifest entry
 has a file is bookkeeping; checking that every file with a derivation marker is in the manifest is
@@ -412,17 +429,27 @@ Languages: Rust + Python (implementation), all 14 (conformance), Python (verifie
 Exit criteria: all met except the two PARTIAL rows in §4.7.
 Authority state: local file creation only. No external effect.
 
-### Phase B — Dual-Core Commit Gate (**NEXT**)
+### Phase B — Dual-Core Commit Gate (**COMPLETE 2026-09-17**)
 
-Objective: the handoff's fourth CRITICAL item. Proposal protocol, capability leases, one-time
-effect permits, effect-time authority revalidation, permit-digest-bound transition proofs.
-Dependencies: Phase A. The write lease in `b1-state` is the seam.
+Objective: the handoff's fourth CRITICAL item. Proposal protocol, one-time effect permits,
+effect-time authority revalidation, permit-digest-bound transition proofs.
+Deliverables: `python/b1_authority`, `crates/b1-authority`, `tools/verify_cross_language_gate.py`,
+[ADR-0006](decisions/ADR-0006-commit-gate.md).
 Design reference: ΩΣ13.9's `SovereignWorkRuntime` and the `approvals`/`fences`/`permits` table
-shapes in `src/b1mu/work/store.py`. Adapted, not vendored.
-Required evidence: concurrent conflicting attempts produce at most one authoritative effect
-commit; a stale executor is rejected; an authority envelope that went stale between planning and
-effect time is refused at effect time, not at admission.
-Exit criteria: mutation tests for each, in both languages, plus cross-language agreement.
+shapes in `src/b1mu/work/store.py`. Adapted, not vendored; declared in `provenance.json`.
+
+Exit criterion met, at two levels. Two Python connections race: exactly one permit, exactly one
+effect, loser refused by the gate's own rule. Then a **Rust process races a Python process** on
+one SQLite file: both peers compute the same authority digest on bytes, exactly one permit issues
+(`REFUSED`), exactly one effect commits (`PERMIT_SPENT`), one effect record reaches history, and
+both peers agree on the final head.
+
+Two additions beyond upstream, both recorded in ADR-0006. Authority is revalidated a **second**
+time at consume time, so an authorization that goes stale while the executor works is refused
+before the effect lands — the handoff's §1.3 requires effect-time checking, and a single
+claim-time check implements only half of it. And an `UNKNOWN` receipt flags the effect identity
+for reconciliation, refusing any further permit until real state is read back with cited evidence.
+
 Authority state: local only.
 
 ### Phase C — Projection topology
@@ -475,8 +502,8 @@ Every roadmap task appears exactly once.
 | Provenance and licence map | CRITICAL | **Done.** Blocks publication of anything; blocks undeclared copying |
 | Canonical event envelope | CRITICAL | **Done.** Every state and effect claim is expressed in it |
 | Root authoritative journal | CRITICAL | **Done.** Prevents multiple truths |
-| Dual-Core Commit Gate | CRITICAL | **Next.** Without it, equal peers can still produce two histories of one effect |
-| Fencing, idempotency, effect identity | CRITICAL | **Partly done.** Journal-level fencing and duplicate-effect rejection exist; effect-time authority revalidation does not |
+| Dual-Core Commit Gate | CRITICAL | **Done.** A Rust process and a Python process race through it and exactly one effect commits |
+| Fencing, idempotency, effect identity | CRITICAL | **Done.** Journal-level fencing, per-domain gate fences, one-time permits, and authority revalidated at both claim and consume time |
 | Deterministic replay and recovery | HIGH | **Done for the journal.** Not done for work-runtime recovery contracts |
 | Responses shim | HIGH | Nothing local answers through a Codex-derived path without it (ADR-0002) |
 | Model provider and resource ledger | HIGH | Required before any local-AI feasibility claim is more than a hope |
@@ -558,31 +585,37 @@ Objective: close the weakest assumption in the pass. Input: a machine with `kotl
 none. Verification: `verify_polyglot.py` and `verify_polyglot_mutations.py` both at 14.
 Authority: local only.
 
-**Action 2 — Dual-Core Commit Gate.**
-Objective: the fourth CRITICAL item. Input: the write lease in `b1-state`; ΩΣ13.9's
-`SovereignWorkRuntime` as design reference. Output: proposal, lease, permit, fence and
-effect-time revalidation in both languages. Dependency: Action 1 not required; Phase A complete.
-Verification: concurrent conflicting attempts yield at most one commit; a stale executor is
-rejected; an authority envelope that went stale between planning and effect time is refused *at
-effect time*. Authority: local only.
+**Action 2 — ~~Dual-Core Commit Gate~~. DONE 2026-09-17.**
+See Phase B above and [ADR-0006](decisions/ADR-0006-commit-gate.md). Verification landed stronger
+than planned: not only do concurrent conflicting attempts yield at most one commit and a stale
+executor get rejected, but the race is run **between a Rust process and a Python process** on one
+database, and the loser is required to lose by the gate's own rule rather than by a database lock.
 
-**Action 3 — Projection rebuild across all three deployment modes.**
+**Action 3 — Projection rebuild across all three deployment modes. NEXT.**
 Objective: prove projections are disposable in compact, modular and audit-replay layouts. Input:
-Action 2. Output: three layouts, one logical authority. Verification: destroy every projection,
-rebuild, compare digests. Authority: local only.
+the journal and the gate, both complete. Output: three layouts, one logical authority.
+Verification: destroy every projection, rebuild, compare digests. `projection_digest` and the
+`a_projection_can_be_destroyed_and_rebuilt_identically` tests are the seed. Authority: local only.
 
-**Action 4 — Responses shim conformance vectors, before any shim code.**
+**Action 4 — Capability policy above per-effect authorization.**
+Objective: the layer ADR-0006 explicitly does not cover. The gate enforces *an* authorization; it
+does not yet know which actions a workspace permits at all. Input: ΩΣ13.9's `AuthorityPolicy` and
+`workspaces.policy_json` as design reference. Output: a policy checked before an authority can
+even be granted. Verification: a capability the policy denies cannot be granted, let alone
+claimed. Authority: local only.
+
+**Action 5 — Responses shim conformance vectors, before any shim code.**
 Objective: define what the translation must preserve before writing it. Input: Codex's Responses
 API surface; a chat-completions server's surface. Output: vectors for streaming, tool calls and
 reasoning items, asserting on translated bytes. Dependency: none. Verification: vectors exist and
 fail against a deliberately lossy translator. Authority: local only.
 
-**Action 5 — OmniBook model benchmark.**
-Objective: replace every UNKNOWN in §6 item 1 with measurement. Input: Action 4's shim; a chosen
-quantised model. Output: measured RAM, cold load, warm latency, throughput, unload/reload.
-Verification: a repeatable local benchmark artifact, recorded as machine-specific evidence.
-Authority: **`PLAN_READY` — AUTHORIZATION REQUIRED.** Downloading a model file is a persistent
-effect.
+**Deferred — OmniBook model benchmark.** Still the only way to replace §6 item 1's UNKNOWNs with
+measurement, and still **`PLAN_READY` — AUTHORIZATION REQUIRED**: downloading a model file is a
+persistent effect, and the hardware is not reachable from here. It drops out of the top five
+because Action 4 is now the cheaper dependency-correct step, and because §13's highest-risk row
+(a shim mistranslating a call into a *different* effect, recovery UNKNOWN) is mitigated now that
+effect-time revalidation exists.
 
 ## 17. Verification Strategy
 
@@ -687,6 +720,14 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 16 | Own defect: `verify_all.py` reported a clean PASS while four languages went unobserved | reading the footer against the row detail | `PARTIAL` status added; exit 2 |
 | 17 | ΩΣ13.9's full suite was left UNKNOWN by the handoff | 646/646 passed in 67s once `numpy`/`pytest` were installed | §4.9; supersedes the 45/45 claim |
 | 18 | Two of ΩΣ13.9's release checks assert on exact prose, not on the property | `verify_omega12.py:285-286` greps literal strings absent from the 13.9 README, whose guarantees are present and reworded | §4.9; recorded for the rights holder, same failure mode as the `b1mu.toml` gap |
+| 19 | The handoff's §1.3 requires effect-time authority checking; a claim-time-only check implements half of it | the interval between claim and consume is unguarded by construction | ADR-0006: authority is revalidated a second time before the effect commits |
+| 20 | Own defect: the gate's first draft wrote journal rows directly to dodge nested transactions, skipping the journal's own refusals | duplicate event id, unknown causal parent, stale epoch and duplicate effect were all bypassed | both journals grew `append_in_lease`, so the gate gets one atomic unit *and* full validation |
+
+Finding 20 is the most instructive of this increment's own defects. The workaround produced
+passing tests, because nothing in the gate's own suite exercised the journal's refusals — the hole
+was invisible from inside the component that had it. The fix was structural rather than local:
+rather than special-casing the gate, the journal gained a lease-aware entry point, which removes
+the incentive that created the hole.
 
 Finding 18 generalises finding 5, and the pair is the most useful thing this pass learned about the
 archive: in two independent places the archive's **checks** have drifted from the archive's
@@ -720,39 +761,53 @@ global ≠ fourteen local. No working behaviour was replaced; nothing upstream w
 locked decisions in the handoff's §27 all survive, three of them now with running code behind
 them and two (memory policy, writer ownership) now answered.
 
-**Stop reason:** further iteration on this increment would add components without adding evidence.
-The four unobserved consumers need a different machine, not more design. The Dual-Core Commit
-Gate is the next dependency-correct step and is a phase of its own, not a refinement of this one.
-Continuing to elaborate Phase A would be recursion mistaken for improvement.
+**Stop reason:** further iteration on Phases A and B would add components without adding evidence.
+The four unobserved consumers need a different machine, not more design. Capability policy and
+projection topology are phases of their own, not refinements of these. Continuing to elaborate the
+substrate would be recursion mistaken for improvement.
 
 **Status:** `CONVERGED_FOR_CURRENT_OBJECTIVE_AND_EVIDENCE`
 
-Scoped precisely: converged for the causal substrate, on this machine, with these toolchains,
-against this evidence. Not converged for B1 Local, which has six phases remaining. Two verifier
-rows report PARTIAL, and that is a limitation of the environment rather than of the work — stated
-separately, as the contract's §39 requires, rather than folded into the convergence claim.
+Scoped precisely: converged for the causal substrate **and the authority gate above it**, on this
+machine, with these toolchains, against this evidence. Not converged for B1 Local, which has five
+phases remaining. Two verifier rows report PARTIAL, and that is a limitation of the environment
+rather than of the work — stated separately, as the contract's §39 requires, rather than folded
+into the convergence claim.
+
+One claim was materially *strengthened* rather than merely restated between the two passes, and
+it is worth separating from the rest. The first pass established that Rust and Python agree. The
+second establishes that they **contend correctly**: two processes in two languages racing one
+gate produce one permit and one effect, with the loser refused by the design rather than by the
+database. Agreement is a property of two implementations; correct contention is a property of the
+architecture, and it is the one the handoff's "equal computational peers" decision actually rests
+on.
 
 ## 21. Executive Plan
 
 **Strategic goal.** A verifiable causal substrate for B1 Local, so later phases rest on state
 whose integrity is checked by running code.
 
-**Current verified state.** Canonical Event Envelope v1 and a global hash-chained root journal on
-SQLite/WAL, implemented independently in Rust and Python, with the two agreeing byte-for-byte
-across a process boundary on three vectors and on seven history fields. 88 tests (48 Python, 40
-Rust). Seven journal mutation cases detected in both languages. Fourteen language consumers, ten
-observed to verify their invariant and ten observed to refuse when it is broken. A provenance
-record whose verifier refuses undeclared derivations in both directions and reports publication
-BLOCKED.
+**Current verified state.** Canonical Event Envelope v1, a global hash-chained root journal on
+SQLite/WAL, and the Dual-Core Commit Gate above it — each implemented independently in Rust and
+Python. The peers agree byte-for-byte across a process boundary on three vectors, on seven history
+fields, and on authority digests. 135 tests (86 Python, 49 Rust). Seven journal mutation cases
+detected in both languages. A Rust process and a Python process race through one gate and produce
+exactly one permit and exactly one effect, with the loser refused by the gate's own rule. Fourteen
+language consumers, ten observed to verify their invariant and ten observed to refuse when it is
+broken. A provenance record whose verifier refuses undeclared derivations in both directions —
+which it did three times during this increment, correctly — and reports publication BLOCKED.
+
+The upstream ΩΣ13.9 archive was also re-verified rather than trusted: 646/646 tests passing, all
+fourteen of its verifiers exiting 0.
 
 **Critical constraints.** ΩΣ13.9 is all-rights-reserved and is not vendored; Apache-2.0 here
 covers new B1 code only. Codex speaks only the Responses API, so llama.cpp needs a shim. Codex
 Security is not local; only its schemas and skills are portable. The target is 16 GB Windows
 ARM64, so `gpt-oss:20b` — Codex's built-in default — must be overridden.
 
-**Major dependencies.** Phase B (Dual-Core Commit Gate) depends only on Phase A and is next.
-Phase D (models) depends on the shim, which depends on conformance vectors that do not exist yet.
-Phase D also depends on hardware not reachable from here.
+**Major dependencies.** Phases A and B are complete. Phase C (projection topology) and capability
+policy depend only on them and are next. Phase D (models) depends on the shim, which depends on
+conformance vectors that do not exist yet, and on hardware not reachable from here.
 
 **Important unknowns.** Every OmniBook performance number. Whether the four absent-toolchain
 consumers execute correctly. What the shim's streaming and tool-call translation must cover.
@@ -760,19 +815,22 @@ Whether the Hexagon NPU is reachable — IN_DOUBT, not UNKNOWN, because vendor c
 runtime proof. (ΩΣ13.9's full suite was on this list in the first pass; it is now measured at
 646/646.)
 
-**Major risks.** In order: a shim that mistranslates a call into a *different* effect, whose
-recovery is UNKNOWN and which argues for Phase B before Phase D; accidental vendoring of ΩΣ13.9,
-which becomes IRREVERSIBLE once published; and projection drift, which is mitigated by
-construction.
+**Major risks.** Reordered by this increment. A shim that mistranslates a call into a *different*
+effect was the top risk with UNKNOWN recovery; effect-time authority revalidation now mitigates
+it, because a mistranslated target no longer matches the envelope that authorized it. That leaves:
+accidental vendoring of ΩΣ13.9, which becomes IRREVERSIBLE once published and is guarded by a
+bidirectional verifier; the four unobserved language consumers, whose status is honestly UNKNOWN
+rather than assumed; and projection drift, mitigated by construction.
 
 **Next actions.** (1) Execute the four unobserved consumers on a machine with their toolchains.
-(2) Build the Dual-Core Commit Gate. (3) Prove projection rebuild across three deployment modes.
-(4) Write shim conformance vectors before shim code. (5) Benchmark on the OmniBook —
-`PLAN_READY`, authorisation required.
+(2) Prove projection rebuild across three deployment modes. (3) Add capability policy above
+per-effect authorization — the layer ADR-0006 explicitly does not cover. (4) Write shim
+conformance vectors before shim code. (5) Benchmark on the OmniBook — `PLAN_READY`, authorisation
+required.
 
-**Authority state.** `PLAN_READY`. Local file creation and four commits to the designated branch
-only. No repository creation, no publication, no relicensing, no model download, no external
-write, no environment change.
+**Authority state.** `PLAN_READY`. Local file creation, commits and a branch push to the
+designated branch, plus one authorised `pip install` into this ephemeral container. No repository
+creation, no publication, no relicensing, no model download, no external write.
 
 **Verification requirements.** `python3 tools/verify_all.py` from the repository root. Standard
 library only; no `pip install`. Exit 0 means everything was checked and holds; 1 means something

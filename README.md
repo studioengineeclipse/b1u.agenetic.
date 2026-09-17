@@ -14,11 +14,12 @@ what is verified, what is assumed, and what is simply not known yet.
 ```
 $ python3 tools/verify_all.py
 
-  provenance record                       PASS     7 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 48 tests
-  rust unit and vector tests              PASS     40 tests passed
+  provenance record                       PASS     12 derived files declared; publication BLOCKED
+  python unit tests                       PASS     Ran 86 tests
+  rust unit and vector tests              PASS     49 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED
+  rust/python gate commits one effect     PASS     1 permit, 1 effect, heads AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
 ```
@@ -37,6 +38,7 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `schemas/b1-event-envelope-v1.schema.json` | The canonical event record. Keeps Origin, Authority, Executor and Effect as four separate fields so none can be inferred from another |
 | `crates/b1-protocol`, `python/b1_protocol` | Canonical serialization and the envelope, implemented independently in each language |
 | `crates/b1-state`, `python/b1_state` | The root journal: one global hash chain on SQLite/WAL |
+| `crates/b1-authority`, `python/b1_authority` | The Dual-Core Commit Gate: authority envelopes, one-time fenced permits, transition proofs |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
@@ -44,7 +46,34 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
 | `docs/decisions/` | Five ADRs, each recording what was decided and what it cost |
 
-## The three things this layer actually guarantees
+## No effect without live authority
+
+Everything consequential goes `propose → grant → claim_permit → consume`. Proposing needs no
+authority — analysis is not a persistent effect, so the gate does not gate it. Everything past
+that does.
+
+The authority envelope carries the state and plan it was authorized against, so "this
+authorization went stale" is a comparison rather than a judgement. And it is checked **twice**:
+at claim time, and again before the effect is recorded. A permit can be validly issued and the
+world then move while the executor works; recording that effect as authorized would be recording
+an authorization that no longer describes what happened.
+
+`project_outcome` is where receipt ≠ effect ≠ postcondition is enforced as a pure function. A
+provider reporting success with an unverified postcondition resolves to `IN_DOUBT`, never
+`VERIFIED`. `NO_EFFECT` requires an observation, because a reported failure alone does not prove
+nothing happened. And an `UNKNOWN` receipt blocks any retry of that effect until real state has
+been read back with cited evidence — the failure that prevents is a "failed" payment retried, and
+the customer charged twice.
+
+Phase B's exit criterion is proven at two levels. Two Python connections race, and exactly one
+permit issues and one effect lands. Then a **Rust process races a Python process** on one SQLite
+file: both compute the same authority digest, exactly one permit issues, exactly one effect
+reaches history, and both peers agree on the final head. The loser loses by the gate's own rule —
+`REFUSED`, then `PERMIT_SPENT` — not by a database lock, because a gate that only worked because
+SQLite returned `SQLITE_BUSY` would be relying on an implementation detail.
+[ADR-0006](docs/decisions/ADR-0006-commit-gate.md).
+
+## The three things the state layer guarantees
 
 **One canonical form, two independent implementations, checked across a process boundary.** Rust
 and Python must produce byte-identical canonical bytes. `verify_cross_language_digest.py` runs the
@@ -87,9 +116,9 @@ there is no privileged process to fail over from. See
 
 ## Not built
 
-Dual-Core Commit Gate (proposal, permits, effect-time authority revalidation) · projection
-topology · Responses shim and model provider · tournament runtime · security evidence · Tauri
-desktop · pet overlay · the `%B1_HOME%` private user layer.
+Projection topology (compact / modular / audit-replay modes) · Responses shim and model provider ·
+tournament runtime · security evidence · Tauri desktop · pet overlay · the `%B1_HOME%` private
+user layer · capability policy above per-effect authorization.
 
 `docs/OMEGA13-ANALYSIS.md` §11 has the dependency-ordered roadmap and §16 the next five actions.
 
@@ -141,6 +170,7 @@ python3 -m unittest discover -s python/tests -v  # Python peer
 cargo test --workspace                           # Rust peer
 python3 tools/verify_cross_language_digest.py    # canonical bytes agree
 python3 tools/verify_cross_language_journal.py   # history agrees
+python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python peer
 python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite
 python3 tools/build_vectors.py                   # regenerate vectors (review the diff)

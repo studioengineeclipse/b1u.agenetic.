@@ -7,6 +7,6 @@
 pub mod journal;
 
 pub use journal::{
-    chain_digest, projection_digest, Head, JournalError, JournalRecord, RootJournal,
+    chain_digest, projection_digest, Head, JournalError, JournalRecord, Lease, RootJournal,
     VerificationReport, GENESIS, SCHEMA_VERSION,
 };

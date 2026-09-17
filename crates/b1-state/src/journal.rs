@@ -120,6 +120,37 @@ const SCHEMA: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS root_journal_effect ON root_journal(effect_identity)",
 ];
 
+/// The single write lease, held for the duration of one atomic unit.
+///
+/// Returned by [`RootJournal::lease`] so that a component with its own tables
+/// in this database — the commit gate is the one that has them — can make its
+/// writes and the journal's appends commit or roll back together. Two leases
+/// would be two linearization points, which is the split-brain the
+/// single-writer design exists to prevent.
+///
+/// Not a `Drop` guard on purpose: rolling back is a decision, and a guard that
+/// committed or rolled back implicitly would make the choice invisible at the
+/// call site. [`Lease::finish`] is explicit and returns the error.
+#[must_use = "a lease must be finished with commit or rollback"]
+pub struct Lease<'a> {
+    conn: &'a Connection,
+}
+
+impl Lease<'_> {
+    /// Commit when `commit` is true, otherwise roll back.
+    pub fn finish(self, commit: bool) -> Result<()> {
+        if commit {
+            self.conn.execute_batch("COMMIT")?;
+        } else {
+            // A failed rollback is not reported over the original error: the
+            // caller is already handling a failure and the rollback is
+            // best-effort cleanup.
+            let _ = self.conn.execute_batch("ROLLBACK");
+        }
+        Ok(())
+    }
+}
+
 pub struct RootJournal {
     conn: Connection,
 }
@@ -198,6 +229,24 @@ impl RootJournal {
         }
     }
 
+    /// Acquire the single write lease. See [`Lease`].
+    ///
+    /// Inside a lease, use [`RootJournal::append_in_lease`] rather than
+    /// [`RootJournal::append`], which would try to open a second transaction.
+    pub fn lease(&self) -> Result<Lease<'_>> {
+        self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        Ok(Lease { conn: &self.conn })
+    }
+
+    /// The underlying connection, shared deliberately.
+    ///
+    /// A component holding its own tables in this database shares the
+    /// connection so its writes and the journal's commit or roll back
+    /// together. Anything writing here must hold the lease.
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
     pub fn head(&self) -> Result<Head> {
         let head = self.conn.query_row(
             "SELECT head_digest,record_count,max_epoch FROM root_head WHERE id=1",
@@ -223,21 +272,24 @@ impl RootJournal {
     /// is a duplicate effect, which is why `effect_identity` is a column rather
     /// than a field buried in the payload.
     pub fn append(&self, envelope: &Envelope) -> Result<JournalRecord> {
+        let lease = self.lease()?;
+        let outcome = self.append_in_lease(envelope);
+        lease.finish(outcome.is_ok())?;
+        outcome
+    }
+
+    /// Append while the caller already holds the lease.
+    ///
+    /// Same validation as [`RootJournal::append`]; the only difference is who
+    /// owns the transaction. Split out so a caller combining journal appends
+    /// with its own table writes gets one atomic unit and one linearization
+    /// point, rather than being tempted to insert rows directly and skip these
+    /// checks.
+    pub fn append_in_lease(&self, envelope: &Envelope) -> Result<JournalRecord> {
         envelope.validate().map_err(|e| {
             JournalError::Refused(format!("refusing to append an invalid envelope: {e}"))
         })?;
-
-        self.conn.execute_batch("BEGIN IMMEDIATE")?;
-        match self.append_locked(envelope) {
-            Ok(record) => {
-                self.conn.execute_batch("COMMIT")?;
-                Ok(record)
-            }
-            Err(err) => {
-                let _ = self.conn.execute_batch("ROLLBACK");
-                Err(err)
-            }
-        }
+        self.append_locked(envelope)
     }
 
     fn append_locked(&self, envelope: &Envelope) -> Result<JournalRecord> {

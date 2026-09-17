@@ -1,0 +1,13 @@
+[package]
+name = "b1-authority"
+description = "B1 Local Dual-Core Commit Gate: authority envelopes, one-time permits, transition proofs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+b1-protocol = { path = "../b1-protocol" }
+b1-state = { path = "../b1-state" }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }

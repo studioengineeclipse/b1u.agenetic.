@@ -145,6 +145,15 @@ def main() -> int:
             lambda r: f"head after {r.get('events', '?')} events: {str(r.get('head', ''))[:16]}...",
         ),
         summarise_json_tool(
+            "rust/python gate commits one effect",
+            "verify_cross_language_gate.py",
+            args.timeout,
+            lambda r: "; ".join(
+                f"{k}={v}" for k, v in (r.get("steps") or {}).items()
+                if k != "final_head"
+            ),
+        ),
+        summarise_json_tool(
             "fourteen-language participation",
             "verify_polyglot.py",
             args.timeout,
