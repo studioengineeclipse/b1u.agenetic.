@@ -1,32 +1,49 @@
-# B1 Local — causal substrate
+# B1 Local
 
-A local-first multi-model agent platform for Windows ARM64. This repository currently contains
-**the foundation layer only**: canonical event identity, one authoritative history, and
-independent fourteen-language conformance. The model router, tournament, security evidence,
-desktop UI and pet overlay are designed but not built.
+A local-first multi-model agent platform for Windows ARM64: canonical event identity, one
+authoritative history, an authority gate above it, and a multi-model tournament. Security
+evidence, the desktop UI and the pet overlay are designed but not built.
 
-The distinction matters more here than in most projects, because the point of this layer is that
-its claims are checked by running code rather than asserted by documentation. So this README says
-what is verified, what is assumed, and what is simply not known yet.
+## Can I run the multi-model yet?
+
+```bash
+python3 tools/run_tournament.py --probe
+```
+
+That answers it from facts about your machine rather than from this README. If no local model
+server is answering, you are one install and one pull away — `ollama pull qwen3:4b` — because
+Ollama and LM Studio already speak the Responses API the Codex-derived backend requires. No
+shim, no API key, nothing leaves the machine. **[docs/RUNNING.md](docs/RUNNING.md)** is the
+bring-up guide.
+
+The tournament runs today with no model at all, against B1's deterministic participant. That is
+not a mock: a deterministic entrant is frequently right when models are guessing, and it means
+the layering is exercised end to end before any weights exist.
 
 ## What is verified, on this machine
+
+The point of this project is that its claims are checked by running code rather than asserted by
+documentation, so what follows says what is verified, what is assumed, and what is simply not
+known yet.
 
 ```
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 86 tests
+  python unit tests                       PASS     Ran 114 tests
   rust unit and vector tests              PASS     49 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED
   rust/python gate commits one effect     PASS     1 permit, 1 effect, heads AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here
 ```
 
 Exit code 2: nothing failed, not everything was observed. `PARTIAL` is not a softer `PASS` —
-Kotlin, Swift, C# and Dart report `UNKNOWN` because `kotlinc`, `swiftc`, `dotnet` and `dart` are
-absent here. Nobody looked, so nothing is claimed.
+Kotlin, Swift, C# and Dart report `UNKNOWN` because their toolchains are absent here, and the
+tournament ran without competing models because no model server is listening. Nobody looked, so
+nothing is claimed.
 
 Everything runs with **the Python standard library and a Rust toolchain**. No `pip install`, no
 `numpy`, no `pytest`, no npm packages.
@@ -39,12 +56,15 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `crates/b1-protocol`, `python/b1_protocol` | Canonical serialization and the envelope, implemented independently in each language |
 | `crates/b1-state`, `python/b1_state` | The root journal: one global hash chain on SQLite/WAL |
 | `crates/b1-authority`, `python/b1_authority` | The Dual-Core Commit Gate: authority envelopes, one-time fenced permits, transition proofs |
+| `python/b1_models` | Providers, model registry, and the resource ledger that keeps a 16 GB machine honest |
+| `python/b1_tournament` | Hybrid specialist + competitor tournament with layered adjudication |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Six verifiers |
+| `tools/` | Seven verifiers, plus the tournament runner |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
-| `docs/decisions/` | Five ADRs, each recording what was decided and what it cost |
+| `docs/decisions/` | Six ADRs, each recording what was decided and what it cost |
+| `docs/RUNNING.md` | How to bring up local models on the OmniBook |
 
 ## No effect without live authority
 
@@ -116,9 +136,9 @@ there is no privileged process to fail over from. See
 
 ## Not built
 
-Projection topology (compact / modular / audit-replay modes) · Responses shim and model provider ·
-tournament runtime · security evidence · Tauri desktop · pet overlay · the `%B1_HOME%` private
-user layer · capability policy above per-effect authorization.
+Projection topology (compact / modular / audit-replay modes) · the chat-completions shim llama.cpp
+needs · security evidence · Tauri desktop · pet overlay · the `%B1_HOME%` private user layer ·
+capability policy above per-effect authorization.
 
 `docs/OMEGA13-ANALYSIS.md` §11 has the dependency-ordered roadmap and §16 the next five actions.
 
@@ -173,6 +193,7 @@ python3 tools/verify_cross_language_journal.py   # history agrees
 python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python peer
 python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite
+python3 tools/run_tournament.py --probe          # what can this machine serve?
 python3 tools/build_vectors.py                   # regenerate vectors (review the diff)
 ```
 

@@ -89,6 +89,45 @@ def summarise_cargo(timeout: int) -> dict[str, object]:
     }
 
 
+def summarise_tournament(timeout: int) -> dict[str, object]:
+    """Does the tournament run end to end on this machine, and with what?
+
+    Deliberately reports PARTIAL when no model server is reachable. The
+    tournament genuinely works without one — the deterministic participant is a
+    real entrant — but "ran with no models" and "ran against competing models"
+    are different claims, and only one of them is the multi-model system.
+    """
+    code, out, err = run([sys.executable, "tools/run_tournament.py"], timeout)
+    if code != 0:
+        return {
+            "check": "tournament runs end to end",
+            "status": "FAIL",
+            "detail": (out + err).strip()[:300],
+        }
+
+    probe_code, probe_out, _ = run([sys.executable, "tools/run_tournament.py", "--probe"], timeout)
+    reachable = probe_code == 0 and "-> " in probe_out and "not reachable" not in probe_out
+
+    verdict = next(
+        (line.split(":", 1)[1].strip() for line in out.splitlines()
+         if line.startswith("verdict")), "?"
+    )
+    if reachable:
+        return {
+            "check": "tournament runs end to end",
+            "status": "PASS",
+            "detail": f"verdict={verdict}; a local model server is reachable",
+        }
+    return {
+        "check": "tournament runs end to end",
+        "status": "PARTIAL",
+        "detail": (
+            f"verdict={verdict}; no local model server here, so the deterministic "
+            f"participant ran alone. See docs/RUNNING.md"
+        ),
+    }
+
+
 def summarise_json_tool(
     label: str, script: str, timeout: int, extract=None
 ) -> dict[str, object]:
@@ -168,6 +207,7 @@ def main() -> int:
             lambda r: f"{r['counts']['refused']} REFUSED, {r['counts']['unknown']} UNKNOWN "
                       f"of {r['counts']['expected']}",
         ),
+        summarise_tournament(args.timeout),
     ]
 
     failed = [c for c in checks if c["status"] == "FAIL"]
