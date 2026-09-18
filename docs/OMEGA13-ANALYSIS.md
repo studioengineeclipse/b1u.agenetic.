@@ -165,19 +165,30 @@ changing it is exactly right, and that test belongs upstream.
 
 ### 4.7 What this repository now does, measured
 
-`tools/verify_all.py`, run in this container:
+In this container, on 2026-09-18:
 
 ```
-provenance record                       PASS     7 derived files declared; publication BLOCKED
-python unit tests                       PASS     Ran 48 tests
-rust unit and vector tests              PASS     40 tests passed
-rust/python canonical bytes agree       PASS     3/3 vectors AGREED
-rust/python journal history agrees      PASS     7/7 fields AGREED
-fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14
-fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+$ python3 tools/verify_all.py
+
+  provenance record                       PASS     12 derived files declared; publication BLOCKED
+  python unit tests                       PASS     Ran 132 tests
+  rust unit and vector tests              PASS     49 tests passed
+  rust/python canonical bytes agree       PASS     3/3 vectors AGREED
+  rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
+  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
+  fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
+  one task travels the whole path         PASS     4 runs: 1 writes, 3 refuse correctly
+
+  3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
 
-Exit code 2 — nothing failed, not everything was observed.
+Exit code 2 — nothing failed, not everything was observed. This block is checked against the
+tool's real output by `tools/verify_readme_transcript.py`, which is how a measured-status section
+stops being a thing someone has to remember to update. The earlier version of this section carried
+Phase A's figures (7 derived files, 48 Python tests, no gate or tournament rows) for a full day
+after they stopped being true.
 
 Two defects in this repository's own work were found by reading refusal *reasons* rather than
 exit codes, and both are worth recording because they are the failure mode the contract's §3
@@ -461,24 +472,58 @@ digest. `projection_digest` and the `a_projection_can_be_destroyed_and_rebuilt_i
 are the seed; the full three-mode topology is not built.
 Exit criteria: identical digests across all three modes.
 
-### Phase D — Responses shim + model provider + resource ledger
+### Phase D — Responses shim + model provider + resource ledger (**PARTIAL 2026-09-18**)
 
 Objective: the handoff's Phase 4, re-scoped by ADR-0002. Shim **and** native adapters.
 Dependencies: Phase A for event identity. Independent of B and C.
-Required evidence: translation conformance vectors covering streaming, tool calls and reasoning
-items — asserting on translated bytes, not on "a reply arrived". Then measured RAM, cold load,
-warm latency and throughput **on the OmniBook**.
+
+Built: `python/b1_models` — the provider abstraction, native Ollama and LM Studio adapters (both
+already speak `/v1/responses`, so neither needs the shim), the model registry, and the resource
+ledger that hot-loads and unloads against a 16 GiB budget rather than assuming one resident model
+per logical agent. `tools/benchmark_model.py` is written and **has never been run against a
+model**, because none is installed here and installing one is a persistent effect.
+
+Not built: the chat-completions→Responses shim llama.cpp needs, and its conformance vectors.
+
+Required evidence, still outstanding: translation conformance vectors covering streaming, tool
+calls and reasoning items — asserting on translated bytes, not on "a reply arrived". Then measured
+RAM, cold load, warm latency and throughput **on the OmniBook**. Every byte and millisecond figure
+in `registry.py` is a declared estimate carrying `WORKING_ASSUMPTION`, and `benchmark_model.py`
+refuses to fill a gap it could not measure — a benchmark that substituted a plausible number would
+be worse than none, because the output looks measured either way.
+
 Exit criteria: one 3B/4B-class model loads, answers, unloads, with measured numbers recorded as
-machine-specific evidence.
+machine-specific evidence. **Not met.**
 Authority state: **downloading a model is a persistent effect requiring its own authorisation.**
 
-### Phase E — Tournament runtime
+### Phase E — Tournament runtime and the work vertical (**COMPLETE 2026-09-18**)
 
 Objective: the handoff's approved hybrid specialist + competitor tournament with layered
-adjudication.
+adjudication, and the runner that joins it to the gate.
 Dependencies: Phase B (authority), Phase D (models).
+Deliverables: `python/b1_tournament`, `python/b1_work`, `tools/run_tournament.py`,
+`tools/run_agent.py`.
+
 Required evidence: a known-invalid candidate cannot win on majority or model preference when
-deterministic evidence rejects it.
+deterministic evidence rejects it. **Met** — `run_agent.py --approve --bad-answer` puts an
+overclaiming answer in, a deterministic verifier eliminates it, and the verdict is `REJECT` with
+nothing written. Model synthesis chooses only among survivors; it never reinstates one.
+
+Adjudication is graded, not scored. `Adjudication.epistemic_status` returns `VERIFIED` only when
+`deterministic_evidence` is non-empty — refs from conclusive, *passing* verifiers. An earlier
+draft graded on `evidence_refs`, which includes model completions, so a unanimous room of models
+would have read as `VERIFIED`. Agreement is not evidence, and the two fields exist to keep that
+distinction structural rather than remembered.
+
+The vertical runs end to end: propose → tournament → adjudicate → authority → permit → execute →
+read back → consume → journal. `python/b1_work/effects.py` is the only code in B1 that touches the
+world. Four demo paths are checked by `verify_all.py`: one writes, three refuse — unapproved,
+stale authority, and failed verification — and the three refusals matter more than the one write,
+because a runner that wrote unconditionally would pass the first.
+
+Authority is re-observed **immediately before the effect**, and that observation, not the one
+captured at grant time, is what `consume` revalidates against. The first implementation passed the
+grant-time digest, which always matches, so the check was vacuous while reading as enforced.
 
 ### Phase F — Security evidence
 
@@ -505,11 +550,13 @@ Every roadmap task appears exactly once.
 | Dual-Core Commit Gate | CRITICAL | **Done.** A Rust process and a Python process race through it and exactly one effect commits |
 | Fencing, idempotency, effect identity | CRITICAL | **Done.** Journal-level fencing, per-domain gate fences, one-time permits, and authority revalidated at both claim and consume time |
 | Deterministic replay and recovery | HIGH | **Done for the journal.** Not done for work-runtime recovery contracts |
-| Responses shim | HIGH | Nothing local answers through a Codex-derived path without it (ADR-0002) |
-| Model provider and resource ledger | HIGH | Required before any local-AI feasibility claim is more than a hope |
+| Responses shim | HIGH | Only llama.cpp needs it: Ollama and LM Studio already speak `/v1/responses` (ADR-0002) |
+| Model provider and resource ledger | HIGH | **Done, unmeasured.** Adapters, registry and ledger exist; every size and latency figure is still a declared estimate |
 | Projection topology | HIGH | Required for the handoff's three deployment modes |
 | Fourteen-language conformance | HIGH | **Done, 10/14 observed.** U-level invariant |
-| Hybrid tournament | HIGH | Defines B1's multi-model behaviour |
+| Hybrid tournament | HIGH | **Done.** Deterministic evidence eliminates before models choose, and a rejected candidate cannot be reinstated by agreement |
+| End-to-end work runner | HIGH | **Done.** One task to a verified effect, with the three refusal paths checked alongside the one write |
+| OmniBook model benchmark | HIGH | Harness written, never run. The only thing that turns §6's UNKNOWNs into measurement, and it needs a model download — a persistent effect |
 | Security evidence integration | HIGH | Consequential code and agent safety |
 | Private user layer isolation | HIGH | Public-repository requirement; depends on ADR-0003 |
 | Desktop full UI | MEDIUM | User-facing core, but after the backend contracts it renders |
@@ -617,18 +664,40 @@ because Action 4 is now the cheaper dependency-correct step, and because §13's 
 (a shim mistranslating a call into a *different* effect, recovery UNKNOWN) is mitigated now that
 effect-time revalidation exists.
 
+What changed on 2026-09-18: the harness for that benchmark now exists —
+`tools/benchmark_model.py`, one command on the OmniBook — so the deferred item is no longer
+"write a benchmark" but "authorise a download and run one". The tool reports what it measured and
+marks what it could not, including refusing to synthesise a resident-memory figure the provider
+did not give it. Nothing in it has been run against a model, and no number it would produce
+appears anywhere in this repository.
+
+Also landed outside the five: `python/b1_models`, `python/b1_tournament` and `python/b1_work`
+(Phase D partial, Phase E complete), plus `tools/verify_readme_transcript.py`, which was not
+planned at all — it exists because this README had drifted into paraphrasing its own verifier, and
+a drift that already happened once is not a hypothetical worth trusting to care.
+
 ## 17. Verification Strategy
 
-Six verifiers, and what would falsify each:
+Eight verifiers, and what would falsify each:
 
 | Verifier | Establishes | Falsified by |
 |---|---|---|
 | `verify_provenance.py` | The provenance record is complete in both directions | A file with a derivation marker absent from the manifest, or a manifest entry whose marker disagrees |
 | `verify_cross_language_digest.py` | Two independent implementations agree on canonical bytes | One byte of difference, printed as both strings |
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
+| `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits | Two permits, two effect records, disagreeing heads, or a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
 | `verify_polyglot_mutations.py` | Those checks bite | A consumer passing against a vector violating its own invariant — reported as `DECORATIVE` |
+| `verify_readme_transcript.py` | README.md quotes the verifier rather than paraphrasing it | A transcript line the tool does not print; a named check that does not exist; a check the transcript omits |
 | `verify_all.py` | All of the above, with unobserved things visibly unobserved | Any FAIL; PARTIAL when something went unobserved |
+
+`verify_readme_transcript.py` is the newest and the narrowest, and it exists because the defect it
+checks for had already happened: the README printed `7/7 fields AGREED` on a row where the tool
+had reported a head digest. Nobody fabricated that number — a summary drifted from the thing it
+summarised, which is the same failure mode as §4.6 and §4.9 upstream, arriving here. It is
+deliberately **not** run from `verify_all.py`: that would recurse, and its `STALE` outcome is
+ambiguous by construction (either the README is wrong or your machine differs from the one it
+records) so rolling it into a PASS/FAIL table would assert a cause nobody observed.
 
 Three properties of this strategy are worth stating because they are what makes it evidence
 rather than decoration.

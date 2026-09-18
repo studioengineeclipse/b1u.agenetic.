@@ -30,15 +30,25 @@ known yet.
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 114 tests
+  python unit tests                       PASS     Ran 132 tests
   rust unit and vector tests              PASS     49 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
-  rust/python journal history agrees      PASS     7/7 fields AGREED
-  rust/python gate commits one effect     PASS     1 permit, 1 effect, heads AGREED
-  fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14
+  rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
+  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
-  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here
+  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
+  one task travels the whole path         PASS     4 runs: 1 writes, 3 refuse correctly
+
+  3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
+
+That is the tool's output, not a summary of it — every line above is a string `verify_all.py`
+prints. An earlier draft of this README paraphrased the table and, in doing so, printed
+`7/7 fields AGREED` for a check that reported a head digest instead. The fix was to make the
+tool's own line say the thing worth saying, then quote it. A README that paraphrases its
+verifier is the same defect this project keeps finding elsewhere: a check that has drifted from
+its substance. Add `--json` for the full underlying report behind each summarised line.
 
 Exit code 2: nothing failed, not everything was observed. `PARTIAL` is not a softer `PASS` —
 Kotlin, Swift, C# and Dart report `UNKNOWN` because their toolchains are absent here, and the
@@ -58,10 +68,11 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `crates/b1-authority`, `python/b1_authority` | The Dual-Core Commit Gate: authority envelopes, one-time fenced permits, transition proofs |
 | `python/b1_models` | Providers, model registry, and the resource ledger that keeps a 16 GB machine honest |
 | `python/b1_tournament` | Hybrid specialist + competitor tournament with layered adjudication |
+| `python/b1_work` | The runner that joins them: task in, verified effect out. `effects.py` is the only code that touches the world |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Seven verifiers, plus the tournament runner |
+| `tools/` | Eight verifiers, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
 | `docs/decisions/` | Six ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models on the OmniBook |
@@ -194,7 +205,16 @@ python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python pe
 python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite
 python3 tools/run_tournament.py --probe          # what can this machine serve?
+python3 tools/run_agent.py --approve             # one task, all the way through
 python3 tools/build_vectors.py                   # regenerate vectors (review the diff)
+
+python3 tools/verify_all.py --json > report.json                # one machine-readable report
+python3 tools/verify_readme_transcript.py --report report.json  # the quoted transcripts are real
 ```
+
+The last one checks that this README and `docs/OMEGA13-ANALYSIS.md` §4.7 quote the verifier rather
+than paraphrase it. It exits 3, not 1, when a transcript does not match: either the file is stale
+or your machine differs from the one it records, and the script cannot tell which, so it says both
+instead of picking one.
 
 Add `--json` to any verifier for a machine-readable report.

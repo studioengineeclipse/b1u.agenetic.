@@ -54,10 +54,14 @@ def summarise_python_tests(timeout: int) -> dict[str, object]:
     ran = next(
         (line for line in text.splitlines() if line.startswith("Ran ")), "Ran ? tests"
     )
+    # Drop unittest's elapsed time. It changes on every run, and a figure that
+    # changes on every run cannot be quoted anywhere without going stale --
+    # including in this project's own README, which quotes this table.
+    ran = ran.split(" in ")[0].strip()
     return {
         "check": "python unit tests",
         "status": "PASS" if code == 0 else "FAIL",
-        "detail": ran.strip(),
+        "detail": ran,
     }
 
 
@@ -121,11 +125,92 @@ def summarise_tournament(timeout: int) -> dict[str, object]:
     return {
         "check": "tournament runs end to end",
         "status": "PARTIAL",
-        "detail": (
-            f"verdict={verdict}; no local model server here, so the deterministic "
-            f"participant ran alone. See docs/RUNNING.md"
-        ),
+        "detail": f"verdict={verdict}; no model server here, see docs/RUNNING.md",
     }
+
+
+def summarise_agent(timeout: int) -> dict[str, object]:
+    """Does a task travel the whole path, and does each gate refuse correctly?
+
+    Four runs, because one success proves less than one success plus three
+    refusals. A runner that wrote the file unconditionally would pass the first
+    and fail the rest.
+    """
+    cases = [
+        ([], "does not exist", "unapproved writes nothing"),
+        (["--approve"], "It proves a record was altered", "approved writes"),
+        (["--approve", "--interfere"], "another actor wrote here first",
+         "stale authority refuses"),
+        (["--approve", "--bad-answer"], "does not exist",
+         "failed verification refuses"),
+    ]
+    observed: list[str] = []
+    for flags, expected, label in cases:
+        code, out, err = run([sys.executable, "tools/run_agent.py", *flags], timeout)
+        if code != 0:
+            return {
+                "check": "one task travels the whole path",
+                "status": "FAIL",
+                "detail": f"{label}: exited {code}: {(out + err).strip()[:200]}",
+            }
+        if expected not in out:
+            return {
+                "check": "one task travels the whole path",
+                "status": "FAIL",
+                "detail": f"{label}: expected {expected!r} in the output and it was absent",
+            }
+        observed.append(label)
+    writes = sum(1 for label in observed if label == "approved writes")
+    return {
+        "check": "one task travels the whole path",
+        "status": "PASS",
+        "detail": f"{len(observed)} runs: {writes} writes, {len(observed) - writes} refuse correctly",
+        "runs": observed,
+    }
+
+
+def summarise_agreement(key: str, noun: str):
+    """Roll a report's per-entry agreement map into one line, naming dissent.
+
+    `n/n AGREED` is only allowed to be printed when every entry agreed. Anything
+    else names the entries that did not, because "12/14 agreed" read at a glance
+    looks like a pass and the two that disagreed are the entire finding.
+    """
+    def extract(report: dict[str, object]) -> str:
+        entries = report.get(key) or {}
+        if not isinstance(entries, dict) or not entries:
+            return f"no {noun} reported"
+        disagreed = sorted(k for k, v in entries.items() if v != "AGREED")
+        if disagreed:
+            return (
+                f"{len(entries) - len(disagreed)}/{len(entries)} {noun} AGREED; "
+                f"DISAGREED: {', '.join(disagreed)}"
+            )
+        return f"{len(entries)}/{len(entries)} {noun} AGREED"
+
+    return extract
+
+
+def summarise_gate(report: dict[str, object]) -> str:
+    """One line for the race: how many permits, how many effects, how the
+    losers lost, and whether the two peers ended on the same head.
+
+    The loser kinds are in the summary on purpose. A gate that only worked
+    because SQLite returned SQLITE_BUSY would show the same permit and effect
+    counts as one that worked by its own rule, and only the loser kind tells
+    the two apart.
+    """
+    steps = report.get("steps") or {}
+    if not isinstance(steps, dict):
+        return "no steps reported"
+    claim = str(steps.get("concurrent_claim", "?"))
+    permits = claim.split(" granted", 1)[0] if " granted" in claim else "?"
+    return (
+        f"{permits} permit, {steps.get('effect_records_in_history', '?')} effect, "
+        f"losers {steps.get('claim_loser_kind', '?')}/"
+        f"{steps.get('consume_loser_kind', '?')}, heads "
+        f"{steps.get('head_agreement', '?')}"
+    )
 
 
 def summarise_json_tool(
@@ -152,7 +237,47 @@ def summarise_json_tool(
     if status == "PASS" and report.get("unknown"):
         status = "PARTIAL"
 
-    return {"check": label, "status": status, "detail": detail}
+    # The table detail is a summary, so the underlying report travels with it
+    # in --json. Otherwise the compact form would be the only machine-readable
+    # record, and a summary is not evidence.
+    return {"check": label, "status": status, "detail": detail, "report": report}
+
+
+def render_table(checks: list[dict[str, object]]) -> list[str]:
+    """The status table, as lines.
+
+    Factored out so `verify_readme_transcript.py` can render the same lines
+    from a saved report and compare them to what README.md claims this tool
+    prints. A README that paraphrases its verifier is a check drifted from its
+    substance, and this is how that stays checkable rather than remembered.
+    """
+    width = max(len(str(c["check"])) for c in checks)
+    return [
+        f"  {str(c['check']):<{width}}  {str(c['status']):<8} {c['detail']}"
+        for c in checks
+    ]
+
+
+def render_footer(checks: list[dict[str, object]]) -> list[str]:
+    failed = [c for c in checks if c["status"] == "FAIL"]
+    unknown = [c for c in checks if c["status"] == "UNKNOWN"]
+    partial = [c for c in checks if c["status"] == "PARTIAL"]
+    lines: list[str] = []
+    if failed:
+        lines.append(f"  {len(failed)} check(s) FAILED.")
+    if unknown:
+        lines.append(
+            f"  {len(unknown)} check(s) UNKNOWN: could not be checked here at all, "
+            f"and not to be reported as passing."
+        )
+    if partial:
+        lines.append(
+            f"  {len(partial)} check(s) PARTIAL: nothing wrong was found, but not "
+            f"everything was observed on this machine."
+        )
+    if not lines:
+        lines.append("  All checks verified on this machine.")
+    return lines
 
 
 def main() -> int:
@@ -175,22 +300,20 @@ def main() -> int:
             "rust/python canonical bytes agree",
             "verify_cross_language_digest.py",
             args.timeout,
-            lambda r: ", ".join(f"{k}={v}" for k, v in sorted(r["vectors"].items())),
+            summarise_agreement("vectors", "vectors"),
         ),
         summarise_json_tool(
             "rust/python journal history agrees",
             "verify_cross_language_journal.py",
             args.timeout,
-            lambda r: f"head after {r.get('events', '?')} events: {str(r.get('head', ''))[:16]}...",
+            lambda r: summarise_agreement("fields", "fields")(r)
+                      + f" after {r.get('events', '?')} events",
         ),
         summarise_json_tool(
             "rust/python gate commits one effect",
             "verify_cross_language_gate.py",
             args.timeout,
-            lambda r: "; ".join(
-                f"{k}={v}" for k, v in (r.get("steps") or {}).items()
-                if k != "final_head"
-            ),
+            summarise_gate,
         ),
         summarise_json_tool(
             "fourteen-language participation",
@@ -208,6 +331,7 @@ def main() -> int:
                       f"of {r['counts']['expected']}",
         ),
         summarise_tournament(args.timeout),
+        summarise_agent(args.timeout),
     ]
 
     failed = [c for c in checks if c["status"] == "FAIL"]
@@ -218,25 +342,12 @@ def main() -> int:
         print(json.dumps({"checks": checks, "failed": len(failed),
                           "unknown": len(unknown), "partial": len(partial)}, indent=2))
     else:
-        width = max(len(str(c["check"])) for c in checks)
         print()
-        for check in checks:
-            print(f"  {str(check['check']):<{width}}  {str(check['status']):<8} {check['detail']}")
+        for line in render_table(checks):
+            print(line)
         print()
-        if failed:
-            print(f"  {len(failed)} check(s) FAILED.")
-        if unknown:
-            print(
-                f"  {len(unknown)} check(s) UNKNOWN: could not be checked here at all, "
-                f"and not to be reported as passing."
-            )
-        if partial:
-            print(
-                f"  {len(partial)} check(s) PARTIAL: nothing wrong was found, but not "
-                f"everything was observed on this machine."
-            )
-        if not failed and not unknown and not partial:
-            print("  All checks verified on this machine.")
+        for line in render_footer(checks):
+            print(line)
         print()
 
     if failed:
