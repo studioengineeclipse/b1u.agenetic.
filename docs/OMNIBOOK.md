@@ -3,6 +3,25 @@
 For the HP OmniBook 3 — Snapdragon X X1-26-100, 16 GB. Everything here also
 applies to any Windows ARM64 machine.
 
+## The three commands
+
+```powershell
+git clone -b claude/b1-local-omega13-handoff-auv8bc https://github.com/studioengineeclipse/b1u.agenetic. b1-local
+cd b1-local
+.\START-HERE.ps1
+```
+
+Name the target directory. This repository's name ends in a dot and Windows silently strips
+trailing dots from path names, so letting git derive the folder name invites a problem that looks
+like a git bug and is not one.
+
+`START-HERE.ps1` finds your Python (`py`, `python`, or `python3` — in that order, because `py` is
+the launcher python.org installs and the only one reliably present), tells you what the machine
+can run, runs every verifier, then runs one real task from prompt to a verified file on disk.
+
+If it cannot find Python 3.10+, it says so and stops rather than failing later with something
+confusing.
+
 ## Read this first
 
 **B1 has never been executed on Windows.** Every measurement in the README was

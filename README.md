@@ -5,38 +5,64 @@ authoritative history, a capability policy and authority gate above it, a multi-
 and security findings that constrain without authorising. The desktop UI, the pet overlay and the
 shim's transport are designed but not built.
 
-## Start here
+## Can I run it? Yes. Here is how.
 
-```bash
-python tools/check_machine.py
+**Windows (the OmniBook):**
+
+```powershell
+git clone -b claude/b1-local-omega13-handoff-auv8bc https://github.com/studioengineeclipse/b1u.agenetic. b1-local
+cd b1-local
+.\START-HERE.ps1
 ```
 
-Needs nothing — no cargo, no model server, no toolchains, no arguments. It reports your
-interpreter, architecture, RAM, which model servers answer and which of the fourteen toolchains
-exist, then names the next command for *your* machine. **On Windows, and on the OmniBook
-specifically, read [docs/OMNIBOOK.md](docs/OMNIBOOK.md) first.**
-
-Everything measured in this README was measured on `linux-x86_64`. B1 has never been executed on
-Windows. The Python is standard-library with no POSIX-only calls — audited rather than assumed, and
-the audit found and fixed two real Windows defects. Two found does not mean there is not a third,
-so `check_machine.py` says the platform is untested on every run and `verify_all.py` is what
-answers the question for the machine in front of you.
-
-## Can I run the multi-model yet?
+**Linux or macOS:**
 
 ```bash
-python3 tools/run_tournament.py --probe
+git clone -b claude/b1-local-omega13-handoff-auv8bc https://github.com/studioengineeclipse/b1u.agenetic. b1-local
+cd b1-local
+./START-HERE.sh
 ```
 
-That answers it from facts about your machine rather than from this README. If no local model
-server is answering, you are one install and one pull away — `ollama pull qwen3:4b` — because
-Ollama and LM Studio already speak the Responses API the Codex-derived backend requires. No
-shim, no API key, nothing leaves the machine. **[docs/RUNNING.md](docs/RUNNING.md)** is the
-bring-up guide.
+That is the whole thing. It needs **Python 3.10 or newer and nothing else** — no model, no
+`pip install`, no cargo, no network, no API key. It checks your machine, runs every verifier, then
+runs one real task from prompt to a verified file on disk and prints every gate it passed.
 
-The tournament runs today with no model at all, against B1's deterministic participant. That is
-not a mock: a deterministic entrant is frequently right when models are guessing, and it means
-the layering is exercised end to end before any weights exist.
+Two things that will bite you if nobody says them:
+
+- **Name the target directory** (`b1-local` above). This repository's name ends in a dot, and
+  Windows silently strips trailing dots from path names, so letting git derive the folder name is
+  asking for trouble. On Linux it works either way.
+- **On Windows the command is `py`, not `python3`.** `START-HERE.ps1` finds whichever you have.
+  If you are typing commands yourself, use `py tools\verify_all.py`.
+
+If Python is missing: install 3.10+ from python.org, take the **ARM64** installer on the OmniBook
+(the x64 one runs under emulation), and tick *Add python.exe to PATH*.
+
+### Then, for the multi-model path
+
+```powershell
+# 1. install Ollama from https://ollama.com/download
+ollama pull qwen3:4b          # ~2.5 GB, fits 16 GB comfortably
+py tools\run_tournament.py --probe
+```
+
+No shim and no API key needed for Ollama or LM Studio — both already speak the Responses API
+(ADR-0002). llama.cpp will not work yet; it speaks chat-completions and that translation layer is
+specified but unbuilt.
+
+**Everything measured below was measured on `linux-x86_64`. B1 has never been executed on
+Windows.** The Python is standard-library with no POSIX-only calls — audited, and the audit found
+and fixed two real Windows defects. Two found does not mean there is not a third, so believe
+`verify_all.py` on your machine over anything this file says about mine.
+**[docs/OMNIBOOK.md](docs/OMNIBOOK.md)** has the Windows detail.
+
+## It works with no model at all
+
+`START-HERE` runs a complete tournament against B1's deterministic participant. That is not a
+mock: a deterministic entrant is frequently right when models are guessing, and it means the
+layering is exercised end to end before any weights exist. `verify_all.py` reports that row
+`PARTIAL` rather than `PASS`, because "ran with no models" and "ran against competing models" are
+different claims.
 
 ## What is verified, on this machine
 
@@ -114,6 +140,7 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `docs/decisions/` | Eleven ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models |
 | `docs/OMNIBOOK.md` | Windows 11 ARM64 bring-up, and what the hardware will and will not do |
+| `START-HERE.ps1`, `START-HERE.sh` | One command: check the machine, run the verifiers, run one real task |
 
 ## Two questions, both of which must say yes
 
