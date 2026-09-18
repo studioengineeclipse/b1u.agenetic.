@@ -34,6 +34,9 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+from verify_polyglot import missing_tools  # noqa: E402
 
 # Each mutation: the vector file to damage, and a function damaging the bytes in
 # the one way that language's invariant forbids. Nothing else may change.
@@ -130,8 +133,7 @@ def check(language: str, timeout: int) -> dict[str, object]:
         .read_text(encoding="utf-8")
     )
 
-    tools = [str(manifest["required_tool"]), *(manifest.get("helper_tools") or [])]
-    missing = [t for t in tools if not shutil.which(t)]
+    missing = missing_tools(manifest)
     if missing:
         return {
             "status": "UNKNOWN",

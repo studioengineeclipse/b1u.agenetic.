@@ -1,5 +1,10 @@
 # Running B1's multi-model tournament
 
+**On Windows, and on the OmniBook specifically, start with
+[OMNIBOOK.md](OMNIBOOK.md).** The commands below are written `python3`, which is
+the POSIX spelling; on Windows it is `python`, and there are two other
+Windows-specific things worth knowing before you begin.
+
 ## The short version
 
 ```bash

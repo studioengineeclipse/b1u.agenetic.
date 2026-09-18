@@ -177,11 +177,11 @@ $ python3 tools/verify_all.py
   rust/python journal history agrees       PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect      PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth        PASS     3 modes AGREED, 5/5 rust/python AGREED
-  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 154 files, 2 not scanned; licensing blocker untouched
+  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 157 files, 2 not scanned; licensing blocker untouched
   a finding blocks but cannot authorize    PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 11 findings (11 self-referential)
   shim vectors define and discriminate     PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
-  fourteen-language participation          PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
-  fourteen-language checks actually bite   PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  fourteen-language participation          PARTIAL  11 POSTCONDITION_VERIFIED, 3 UNKNOWN of 14 (unknown: C#, Kotlin, Swift)
+  fourteen-language checks actually bite   PARTIAL  11 REFUSED, 3 UNKNOWN of 14
   tournament runs end to end               PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
   one task travels the whole path          PASS     5 runs: 1 writes, 4 refuse correctly
 
@@ -638,6 +638,31 @@ is no longer present in this environment, so the shapes in `b1_security` are B1'
 fill the same role and not claimed compatible. Nothing from that archive is declared in
 `provenance.json`, and there is nothing to declare.
 
+### Phase G2 — Runnable on the OmniBook (**PARTIAL 2026-09-18**)
+
+Objective: the user's stated objective, in their words -- *"I wanna be able to run this and use
+this on my laptop."* HP OmniBook 3, Windows 11 ARM64, Snapdragon X, 16 GB.
+Deliverables: `tools/check_machine.py`, `docs/OMNIBOOK.md`, and two Windows defect fixes.
+
+**Two real portability defects, found by auditing rather than assuming.** The Python consumer's
+manifest invoked `python3`, which does not exist on a default Windows install; it now invokes
+`{python}`, the interpreter running the harness, which is also the more correct check because it
+guarantees the consumer runs on the same interpreter doing the verifying. And compiled consumers
+were built as `consumer`, which Windows cannot launch because it names executables by extension;
+`.exe` is now appended on `os.name == "nt"`. The wider audit found no POSIX-only calls, no `/tmp`
+assumptions and no shelling out beyond `sys.executable` and the Rust binary.
+
+Two found means the audit was worth doing and does not mean there is not a third, which is why the
+deliverable is a preflight that reports facts about the machine in front of it rather than a
+document asserting Windows support. `check_machine.py` needs nothing -- no cargo, no server, no
+toolchains, no arguments -- and says on every run that this platform is untested.
+
+**Still PARTIAL, and honestly so:** B1 has never been executed on Windows. Whether Ollama and LM
+Studio ship Windows ARM64 builds could not be checked from here, because the network policy refuses
+their download hosts. And the Snapdragon X's NPU is not in the picture at all -- neither server
+routes these models through it, which `docs/OMNIBOOK.md` says plainly rather than leaving as a
+hope.
+
 ### Phase G1 — The private/public boundary (**COMPLETE 2026-09-18**)
 
 Objective: Phase G's second required evidence, *"a privacy scan finds no personal data or key
@@ -693,7 +718,8 @@ Every roadmap task appears exactly once.
 | Private user layer isolation | HIGH | **Boundary done, runtime not.** Declared as data and checked against the public tree by an independent publication blocker; no code reads `B1_HOME` yet |
 | Desktop full UI | MEDIUM | User-facing core, but after the backend contracts it renders |
 | Pet overlay | MEDIUM | Depends on real runtime state existing to display |
-| Executing the four unobserved consumers | MEDIUM | Cheap on a machine with the toolchains; currently the weakest assumption in the pass |
+| Executing the four unobserved consumers | MEDIUM | **One of four done.** Dart observed 2026-09-18 under `req-install-dart`, and it refuses its own mutation. Kotlin, Swift and C# download hosts are refused by this environment's network policy, which no authorization changes |
+| Windows ARM64 execution | HIGH | **Two defects fixed, platform still untested.** `check_machine.py` reports facts about the machine in front of it; nothing here has run on Windows |
 | Upstream `b1mu.toml` regression test | LOW | A real defect, but in the archive rather than here, and it blocks nothing in B1 Local |
 | Visual polish | LOW | Non-blocking until functional contracts pass |
 
@@ -962,6 +988,7 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 26 | The scope matcher existed twice, and the policy layer would have made it three times | `b1_authority.authority._scope_admits` and its Rust twin | moved to `b1_protocol.scope` / `b1-protocol::scope`; `scope_is_valid` added, which refuses `docs/*` outright |
 | 29 | Own defect: privacy redaction was per-rule, so a non-redacting rule printed the password a redacting rule had just withheld -- a database URL carrying a user and password matches both the credentials rule and the email rule, since the password-and-host portion is address-shaped | `test_privacy.py` caught it the same day | redaction is computed once per line across every matching rule; the reason to redact is "this line contains a secret", which does not stop being true for the second matcher |
 | 30 | Own defect: `verify_privacy.py` listed only git-*tracked* files, and its own docstring named the gap -- "the difference is precisely the untracked file someone is about to `git add -A`" -- while the code took the narrower option anyway | the scan was blind to this increment's own new files until the basis was widened | `git ls-files --cached --others --exclude-standard`: what a `git add -A` would actually carry |
+| 32 | Own defect: two harnesses had their own copies of "which tools does this manifest need, and are they here", so fixing the Windows `python3` defect in one regressed the other from 11 refusals to 10 -- neither file wrong on its own | the mutation harness reported Python UNKNOWN immediately after the fix | one `missing_tools()` in `verify_polyglot.py`, imported by the mutation harness rather than copied into it |
 | 31 | Own defect: writing *about* a credential-shaped example put a credential-shaped string in the tree, in three documents at once | the widened scan objected to the README, this document and ADR-0011 | the shape is now described in prose rather than quoted, and the one test that needs a real one assembles it at run time |
 | 28 | The security criterion's second half -- "without independently granting mutation authority" -- is a negative property, and a negative property stated in documentation stops being true the first time someone has a good reason to make an exception | ADR-0005 stated it as a design intent with nothing enforcing it | ADR-0010: `tighten()` passes the allow tuple through as the same object, and the absence of a `b1_authority` import is checked in a fresh interpreter |
 | 27 | Own defect: the R3 shim vector was DECORATIVE -- its arguments string survives a JSON round-trip unchanged, so it passed the lossy translator built to break it | `verify_responses_vectors.py` reported it on its first run | a string where a round-trip inserts whitespace, renormalises `1e1` to `10.0` and escapes non-ASCII |

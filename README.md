@@ -5,6 +5,23 @@ authoritative history, a capability policy and authority gate above it, a multi-
 and security findings that constrain without authorising. The desktop UI, the pet overlay and the
 shim's transport are designed but not built.
 
+## Start here
+
+```bash
+python tools/check_machine.py
+```
+
+Needs nothing — no cargo, no model server, no toolchains, no arguments. It reports your
+interpreter, architecture, RAM, which model servers answer and which of the fourteen toolchains
+exist, then names the next command for *your* machine. **On Windows, and on the OmniBook
+specifically, read [docs/OMNIBOOK.md](docs/OMNIBOOK.md) first.**
+
+Everything measured in this README was measured on `linux-x86_64`. B1 has never been executed on
+Windows. The Python is standard-library with no POSIX-only calls — audited rather than assumed, and
+the audit found and fixed two real Windows defects. Two found does not mean there is not a third,
+so `check_machine.py` says the platform is untested on every run and `verify_all.py` is what
+answers the question for the machine in front of you.
+
 ## Can I run the multi-model yet?
 
 ```bash
@@ -37,11 +54,11 @@ $ python3 tools/verify_all.py
   rust/python journal history agrees       PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect      PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth        PASS     3 modes AGREED, 5/5 rust/python AGREED
-  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 154 files, 2 not scanned; licensing blocker untouched
+  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 157 files, 2 not scanned; licensing blocker untouched
   a finding blocks but cannot authorize    PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 11 findings (11 self-referential)
   shim vectors define and discriminate     PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
-  fourteen-language participation          PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
-  fourteen-language checks actually bite   PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  fourteen-language participation          PARTIAL  11 POSTCONDITION_VERIFIED, 3 UNKNOWN of 14 (unknown: C#, Kotlin, Swift)
+  fourteen-language checks actually bite   PARTIAL  11 REFUSED, 3 UNKNOWN of 14
   tournament runs end to end               PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
   one task travels the whole path          PASS     5 runs: 1 writes, 4 refuse correctly
 
@@ -56,9 +73,17 @@ verifier is the same defect this project keeps finding elsewhere: a check that h
 its substance. Add `--json` for the full underlying report behind each summarised line.
 
 Exit code 2: nothing failed, not everything was observed. `PARTIAL` is not a softer `PASS` —
-Kotlin, Swift, C# and Dart report `UNKNOWN` because their toolchains are absent here, and the
-tournament ran without competing models because no model server is listening. Nobody looked, so
-nothing is claimed.
+Kotlin, Swift and C# report `UNKNOWN` because their toolchains are absent here, and the tournament
+ran without competing models because no model server is listening. Nobody looked, so nothing is
+claimed.
+
+Dart moved from `UNKNOWN` to observed on 2026-09-18: its SDK was installed under a named
+authorization (`req-install-dart`), and Dart's consumer both verified the correct vector and
+**refused** the one violating its invariant, so its participation is not decorative. The other
+three stay unobserved because this environment's network policy refuses their download hosts — a
+fact about the environment, not a permission anyone withheld. `tools/request_authorization.py`
+draws that line explicitly, because an approval that cannot produce the effect teaches you your
+approvals do not mean anything.
 
 Everything runs with **the Python standard library and a Rust toolchain**. No `pip install`, no
 `numpy`, no `pytest`, no npm packages.
@@ -84,10 +109,11 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `contracts/b1-responses-shim-v1.json` | Ten invariants a Responses translation must preserve, written before the shim |
 | `conformance/responses/` | One vector per invariant, each required to catch a deliberately lossy translator |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Twelve verifiers, the tournament runner, the agent demo, the benchmark harness |
+| `tools/` | Twelve verifiers, the machine preflight, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
 | `docs/decisions/` | Eleven ADRs, each recording what was decided and what it cost |
-| `docs/RUNNING.md` | How to bring up local models on the OmniBook |
+| `docs/RUNNING.md` | How to bring up local models |
+| `docs/OMNIBOOK.md` | Windows 11 ARM64 bring-up, and what the hardware will and will not do |
 
 ## Two questions, both of which must say yes
 

@@ -40,6 +40,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -66,7 +67,13 @@ MAY_BE_EMPTY = {
 DIGEST_TIERS = ("STDLIB", "NOT_IN_STDLIB")
 
 PLACEHOLDERS = ("{source}", "{sourcedir}", "{out}", "{outdir}", "{contract}",
-                "{vector}", "{expected}")
+                "{vector}", "{expected}", "{python}")
+
+# Windows names an executable by its extension, so a compiled consumer built as
+# `consumer` cannot be launched. Resolved here rather than in fourteen
+# manifests, because the manifests describe a language's contribution and not
+# the host's file-naming rules.
+EXE_SUFFIX = ".exe" if os.name == "nt" else ""
 
 
 class ManifestError(Exception):
@@ -169,8 +176,16 @@ def validate_manifest(manifest: dict[str, object], root: Path) -> list[str]:
         # A run_command may invoke the built artifact itself, which is a
         # placeholder rather than a named tool.
         if head.startswith("{"):
-            if head not in ("{out}",):
-                errors.append(f"{field} may only invoke {{out}} as a placeholder, got {head!r}")
+            # `{out}` is the artifact this manifest just built. `{python}` is
+            # the interpreter running the harness, which is the only correct
+            # way to name Python: `python3` does not exist on a default Windows
+            # install, and any other spelling might be a different version than
+            # the one doing the verifying.
+            if head not in ("{out}", "{python}"):
+                errors.append(
+                    f"{field} may only invoke {{out}} or {{python}} as a placeholder, "
+                    f"got {head!r}"
+                )
         elif head != tool and head not in helpers:
             errors.append(
                 f"{field} invokes {head!r}, which is neither the declared required_tool "
@@ -183,6 +198,24 @@ def validate_manifest(manifest: dict[str, object], root: Path) -> list[str]:
                     errors.append(f"{field} uses the unknown placeholder {name}")
 
     return errors
+
+
+def missing_tools(manifest: dict[str, object]) -> list[str]:
+    """Which of a manifest's declared tools are absent on this machine.
+
+    One implementation, imported by `verify_polyglot_mutations.py` rather than
+    copied into it. The copy existed, and changing this one regressed that one
+    from 11 refusals to 10 without either file being wrong on its own -- which
+    is what two implementations of one rule do.
+
+    `{python}` is excluded because it resolves to the interpreter already
+    running: asking `shutil.which` about the literal string would report the one
+    language that is certainly available as missing.
+    """
+    declared = [str(manifest.get("required_tool", "")),
+                *(str(h) for h in (manifest.get("helper_tools") or []))]
+    return [tool for tool in declared
+            if tool and tool != "{python}" and not shutil.which(tool)]
 
 
 def expand(template: list[str], substitutions: dict[str, str]) -> list[str]:
@@ -246,7 +279,7 @@ def verify_one(manifest: dict[str, object], root: Path, timeout: int) -> dict[st
 
     # A missing toolchain is UNKNOWN, never a pass and never a failure of the
     # code. This is the property that keeps the whole report honest.
-    missing = [t for t in [tool, *(manifest.get("helper_tools") or [])] if not shutil.which(str(t))]
+    missing = missing_tools(manifest)
     if missing:
         result["limitations"] = [
             f"{language} toolchain executable(s) not installed: {', '.join(map(str, missing))}"
@@ -260,12 +293,19 @@ def verify_one(manifest: dict[str, object], root: Path, timeout: int) -> dict[st
         substitutions = {
             "{source}": str(source),
             "{sourcedir}": str(source.parent),
-            "{out}": str(build_dir / "consumer"),
+            "{out}": str(build_dir / f"consumer{EXE_SUFFIX}"),
             "{outdir}": str(build_dir / "out"),
             "{contract}": str(root / str(manifest["input_contract"])),
             "{vector}": str(root / str(manifest["input_vector"])),
             "{expected}": str(root / str(manifest["input_expected"]))
             if manifest.get("input_expected") else "",
+            # The interpreter actually running this harness, not a spelling of
+            # it. `python3` does not exist on a default Windows install, and
+            # `python` there may be a stub or a different version entirely --
+            # but more than portability, this guarantees the Python consumer
+            # runs on the same interpreter that is verifying it, which is the
+            # thing the check is about.
+            "{python}": sys.executable,
         }
 
         for phase in ("build_command", "run_command"):

@@ -57,3 +57,34 @@ Choosing a licence is not permission to publish. Creating a public repository, p
 or distributing any artifact remains a separate persistent effect requiring its own explicit
 authorization at the time it happens. Relicensing OmegaSigma13.9 is the rights holder's decision and
 has not been made.
+
+## The rights-holder question, as of 2026-09-18
+
+Asked directly, the user stated that **they hold the rights to B1μ-DQAS ΩΣ13.9**. That answers the
+question this ADR left open — *who decides* — and it does not answer the decision itself.
+
+Publication stays **BLOCKED**, and deliberately. A relicensing is IRREVERSIBLE in the way that
+matters: once a licence is granted and the content is distributed under it, the grant cannot be
+withdrawn from copies already made. Taking that step on the strength of a radio button would be
+exactly the collapse this repository is built to prevent — `PLAN_READY ≠ EXECUTION_AUTHORIZED`, and
+an authorization has to be bound to a specific envelope naming the action, target, scope and
+expected effect.
+
+So the decision is drafted rather than taken, and these are the questions it needs answered, none
+of which follow from "I hold the rights":
+
+1. **Which licence**, and for which artifact? ΩΣ13.9 relicensed as Apache-2.0 is a different act
+   from B1 Local being permitted to redistribute design derived from it while the archive itself
+   stays reserved. The second is narrower and may be all that is wanted.
+2. **Does it cover the archive's own dependencies?** ΩΣ13.9 declares `numpy` and carries its own
+   third-party surface. A rights holder can licence what they own and not what they merely ship.
+3. **Is the archive's content publishable at all?** Nobody has run a privacy scan over ΩΣ13.9 —
+   `tools/verify_privacy.py` covers *this* tree. The archive is not in this container, so that scan
+   has not happened and cannot be claimed.
+4. **Who is named?** A licence grant names a licensor. That is a real-world identity decision and
+   not a repository one.
+
+Until those are answered, `verify_provenance.py` keeps reporting `PUBLICATION: BLOCKED`, which is
+the correct state and not an oversight. `tools/request_authorization.py` carries the envelope
+(`req-publish-public-repository`) with its digest, IRREVERSIBLE recovery class, and the note that
+this authorization alone does not clear the licensing blocker.

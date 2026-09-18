@@ -1,6 +1,6 @@
 {
   "build_command": [
-    "python3",
+    "{python}",
     "-m",
     "py_compile",
     "{source}"
@@ -21,10 +21,10 @@
   "language": "Python",
   "observable_contribution": "Rejects the canonical vector if any numeric token outside a string literal carries a fraction or an exponent, or if its bytes do not hash to the declared digest.",
   "output_contract": "UTF8_LINE_POSTCONDITION_V1",
-  "required_tool": "python3",
+  "required_tool": "{python}",
   "responsibility": "Verify no non-integer numeric literal reaches the digested form",
   "run_command": [
-    "python3",
+    "{python}",
     "{source}",
     "{contract}",
     "{vector}",
