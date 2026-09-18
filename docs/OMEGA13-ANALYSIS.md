@@ -170,19 +170,20 @@ In this container, on 2026-09-18:
 ```
 $ python3 tools/verify_all.py
 
-  provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 243 tests
-  rust unit and vector tests              PASS     65 tests passed
-  rust/python canonical bytes agree       PASS     3/3 vectors AGREED
-  rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
-  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
-  three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
-  a finding blocks but cannot authorize   PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 14 findings (14 self-referential)
-  shim vectors define and discriminate    PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
-  fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
-  fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
-  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
-  one task travels the whole path         PASS     5 runs: 1 writes, 4 refuse correctly
+  provenance record                        PASS     12 derived files declared; publication BLOCKED
+  python unit tests                        PASS     Ran 266 tests
+  rust unit and vector tests               PASS     65 tests passed
+  rust/python canonical bytes agree        PASS     3/3 vectors AGREED
+  rust/python journal history agrees       PASS     7/7 fields AGREED after 4 events
+  rust/python gate commits one effect      PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
+  three deployment modes, one truth        PASS     3 modes AGREED, 5/5 rust/python AGREED
+  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 154 files, 2 not scanned; licensing blocker untouched
+  a finding blocks but cannot authorize    PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 11 findings (11 self-referential)
+  shim vectors define and discriminate     PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
+  fourteen-language participation          PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
+  fourteen-language checks actually bite   PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  tournament runs end to end               PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
+  one task travels the whole path          PASS     5 runs: 1 writes, 4 refuse correctly
 
   3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
@@ -637,6 +638,29 @@ is no longer present in this environment, so the shapes in `b1_security` are B1'
 fill the same role and not claimed compatible. Nothing from that archive is declared in
 `provenance.json`, and there is nothing to declare.
 
+### Phase G1 — The private/public boundary (**COMPLETE 2026-09-18**)
+
+Objective: Phase G's second required evidence, *"a privacy scan finds no personal data or key
+material in the public tree"*, plus the `%B1_HOME%` boundary ADR-0003 left undefined.
+Deliverables: `python/b1_privacy`, `tools/verify_privacy.py`,
+[ADR-0011](decisions/ADR-0011-private-layer-and-publication.md).
+
+The design point is that publication readiness is **two independent questions**. Licensing blocks
+it today (ADR-0004); a privacy objection would block it separately; and neither clears the other.
+So `verify_privacy.py` cannot express an authorisation at all -- its strongest output is
+`NO_OBJECTION`, and a test asserts its vocabulary contains no word that could be read as a
+clearance, including by running `verify_provenance.py` and requiring publication is still BLOCKED.
+
+The first run raised four objections and all four were real: an absolute container path in this
+document, and three credential-shaped literals in the security tests' fixtures. Both were fixed by
+removing the reported thing rather than the report -- the fixtures are now assembled at run time,
+so the scanner under test sees identical text and the repository stops carrying lines that look
+like credentials. An exclusion list for test files would have been the other kind of fix.
+
+Two limits, stated: the scan covers the working tree and **not git history**, where a secret
+removed in a later commit still lives in the objects; and `%B1_HOME%` is declared, not implemented
+-- no code reads it yet, so the half that relocates runtime state is Phase G proper.
+
 ### Phase G — Desktop, pet, and the private user layer
 
 Objective: Tauri/TypeScript UI, real-state-driven pet overlay, `%B1_HOME%` private layer per
@@ -666,7 +690,7 @@ Every roadmap task appears exactly once.
 | OmniBook model benchmark | HIGH | Harness written, never run. The only thing that turns §6's UNKNOWNs into measurement, and it needs a model download — a persistent effect |
 | Capability policy above per-effect authorization | HIGH | **Done.** Default deny, deny-wins, a persistence ceiling, UNKNOWN never admitted, and the policy digest bound into every envelope |
 | Security evidence integration | HIGH | **Done for the layer.** A finding blocks and structurally cannot authorise. The Codex Security schema port is blocked on the archive |
-| Private user layer isolation | HIGH | Public-repository requirement; depends on ADR-0003 |
+| Private user layer isolation | HIGH | **Boundary done, runtime not.** Declared as data and checked against the public tree by an independent publication blocker; no code reads `B1_HOME` yet |
 | Desktop full UI | MEDIUM | User-facing core, but after the backend contracts it renders |
 | Pet overlay | MEDIUM | Depends on real runtime state existing to display |
 | Executing the four unobserved consumers | MEDIUM | Cheap on a machine with the toolchains; currently the weakest assumption in the pass |
@@ -813,7 +837,7 @@ a drift that already happened once is not a hypothetical worth trusting to care.
 
 ## 17. Verification Strategy
 
-Eleven verifiers, and what would falsify each:
+Twelve verifiers, and what would falsify each:
 
 | Verifier | Establishes | Falsified by |
 |---|---|---|
@@ -822,6 +846,7 @@ Eleven verifiers, and what would falsify each:
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
 | `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits, under one agreed capability policy | Two permits, two effect records, disagreeing heads, a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule, disagreeing policy digests, or either peer granting a capability the policy denies |
 | `verify_cross_language_projection.py` | Three deployment modes derive one digest, and both peers derive the same four views | Two modes disagreeing; a file surviving `destroy()`; a mode whose read-back differs from what it wrote; either peer's view digest differing |
+| `verify_privacy.py` | The publishable tree carries no key material, personal identifier or private-layer file | A forbidden path present; a blocking content match; and, structurally, the scan printing any word that reads as an authorisation |
 | `verify_security_evidence.py` | A finding blocks an unsafe candidate and cannot grant authority | An unsafe candidate surviving; a safe one rejected too (which would make the first check vacuous); `b1_security` reaching `b1_authority` in a fresh interpreter; a tightening that changes the allow list or permits a probe previously refused |
 | `verify_responses_vectors.py` | The shim contract's vectors define what a translation must preserve, and discriminate | A vector the reference fails; a vector that also passes the translator built to break its invariant (`DECORATIVE`); an invariant with no vector |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
@@ -861,8 +886,8 @@ inputs. They are not a proof over all inputs, and no claim here should be read a
 
 **Current state: `PLAN_READY` for everything outside this repository.**
 
-Persistent effects taken, all local and all within the approved scope: files created in
-`/home/user/b1u.agenetic.`, commits on `claude/b1-local-omega13-handoff-auv8bc` and a push of that
+Persistent effects taken, all local and all within the approved scope: files created in the
+repository working tree, commits on `claude/b1-local-omega13-handoff-auv8bc` and a push of that
 branch to `origin` (REVERSIBLE — git history, and a branch that can be deleted), plus
 `pip install numpy pytest` into this ephemeral container on 2026-09-17 under explicit
 authorisation (REVERSIBLE — the container is discarded, and B1 Local itself remains
@@ -935,6 +960,9 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 24 | ADR-0006 shipped a gate that enforces *an* authorization while knowing nothing about which actions a workspace permits at all | the only remaining barrier was a person reading every envelope, forever | ADR-0008: a standing capability policy, asked before an authority can be granted |
 | 25 | An authorization could outlive the standing rule it was granted under | nothing bound the two together, so tightening a policy would leave issued permissions running under the wider one | `policy_digest` is in the envelope and checked first by `staleness()` |
 | 26 | The scope matcher existed twice, and the policy layer would have made it three times | `b1_authority.authority._scope_admits` and its Rust twin | moved to `b1_protocol.scope` / `b1-protocol::scope`; `scope_is_valid` added, which refuses `docs/*` outright |
+| 29 | Own defect: privacy redaction was per-rule, so a non-redacting rule printed the password a redacting rule had just withheld -- a database URL carrying a user and password matches both the credentials rule and the email rule, since the password-and-host portion is address-shaped | `test_privacy.py` caught it the same day | redaction is computed once per line across every matching rule; the reason to redact is "this line contains a secret", which does not stop being true for the second matcher |
+| 30 | Own defect: `verify_privacy.py` listed only git-*tracked* files, and its own docstring named the gap -- "the difference is precisely the untracked file someone is about to `git add -A`" -- while the code took the narrower option anyway | the scan was blind to this increment's own new files until the basis was widened | `git ls-files --cached --others --exclude-standard`: what a `git add -A` would actually carry |
+| 31 | Own defect: writing *about* a credential-shaped example put a credential-shaped string in the tree, in three documents at once | the widened scan objected to the README, this document and ADR-0011 | the shape is now described in prose rather than quoted, and the one test that needs a real one assembles it at run time |
 | 28 | The security criterion's second half -- "without independently granting mutation authority" -- is a negative property, and a negative property stated in documentation stops being true the first time someone has a good reason to make an exception | ADR-0005 stated it as a design intent with nothing enforcing it | ADR-0010: `tighten()` passes the allow tuple through as the same object, and the absence of a `b1_authority` import is checked in a fresh interpreter |
 | 27 | Own defect: the R3 shim vector was DECORATIVE -- its arguments string survives a JSON round-trip unchanged, so it passed the lossy translator built to break it | `verify_responses_vectors.py` reported it on its first run | a string where a round-trip inserts whitespace, renormalises `1e1` to `10.0` and escapes non-ASCII |
 

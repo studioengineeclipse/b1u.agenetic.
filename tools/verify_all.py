@@ -243,6 +243,31 @@ def summarise_projection(report: dict[str, object]) -> str:
     )
 
 
+def summarise_privacy(report: dict[str, object]) -> str:
+    """What it objected to, over what, and never that publication is allowed.
+
+    The scope goes in the line on purpose. "no objection" read on its own is
+    reassurance, and reassurance is not what a privacy scan produces -- it
+    produces the absence of a match, over named rules, on named files.
+    """
+    coverage = report.get("coverage") or {}
+    scanned = len(coverage.get("scanned") or []) if isinstance(coverage, dict) else "?"
+    skipped = len(coverage.get("not_scanned") or []) if isinstance(coverage, dict) else 0
+    rules = len(report.get("rules_applied") or [])
+    objections = len(report.get("objections") or [])
+    verdict = report.get("publication_contribution", "?")
+    # The unscanned count is in the line even when it is small, because
+    # "154 files" and "154 of 156 files" are different claims and only the
+    # second one is true.
+    gap = f", {skipped} not scanned" if skipped else ""
+    if objections:
+        return f"{verdict}: {objections} objection(s) over {rules} rules, {scanned} files{gap}"
+    return (
+        f"{verdict} over {rules} rules on {scanned} files{gap}; "
+        f"licensing blocker untouched"
+    )
+
+
 def summarise_security(report: dict[str, object]) -> str:
     """Both halves of the exit criterion, and the self-scan's shape.
 
@@ -390,6 +415,12 @@ def main() -> int:
             "verify_cross_language_projection.py",
             args.timeout,
             summarise_projection,
+        ),
+        summarise_json_tool(
+            "nothing private in the publishable tree",
+            "verify_privacy.py",
+            args.timeout,
+            summarise_privacy,
         ),
         summarise_json_tool(
             "a finding blocks but cannot authorize",

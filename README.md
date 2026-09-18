@@ -30,19 +30,20 @@ known yet.
 ```
 $ python3 tools/verify_all.py
 
-  provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 243 tests
-  rust unit and vector tests              PASS     65 tests passed
-  rust/python canonical bytes agree       PASS     3/3 vectors AGREED
-  rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
-  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
-  three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
-  a finding blocks but cannot authorize   PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 14 findings (14 self-referential)
-  shim vectors define and discriminate    PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
-  fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
-  fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
-  tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
-  one task travels the whole path         PASS     5 runs: 1 writes, 4 refuse correctly
+  provenance record                        PASS     12 derived files declared; publication BLOCKED
+  python unit tests                        PASS     Ran 266 tests
+  rust unit and vector tests               PASS     65 tests passed
+  rust/python canonical bytes agree        PASS     3/3 vectors AGREED
+  rust/python journal history agrees       PASS     7/7 fields AGREED after 4 events
+  rust/python gate commits one effect      PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
+  three deployment modes, one truth        PASS     3 modes AGREED, 5/5 rust/python AGREED
+  nothing private in the publishable tree  PASS     NO_OBJECTION over 10 rules on 154 files, 2 not scanned; licensing blocker untouched
+  a finding blocks but cannot authorize    PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 11 findings (11 self-referential)
+  shim vectors define and discriminate     PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
+  fourteen-language participation          PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
+  fourteen-language checks actually bite   PARTIAL  10 REFUSED, 4 UNKNOWN of 14
+  tournament runs end to end               PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
+  one task travels the whole path          PASS     5 runs: 1 writes, 4 refuse correctly
 
   3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
@@ -77,14 +78,15 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `python/b1_projection` | Four derived views, three deployment modes, one digest they must all agree on |
 | `python/b1_shim` | What a Responses↔chat-completions translation must preserve. The meaning of the bytes; not the shim |
 | `python/b1_security` | Findings as tournament evidence. Can narrow the policy; structurally cannot widen it |
+| `python/b1_privacy` | Where the `%B1_HOME%` line is, and what the publishable tree would reveal |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `contracts/b1-responses-shim-v1.json` | Ten invariants a Responses translation must preserve, written before the shim |
 | `conformance/responses/` | One vector per invariant, each required to catch a deliberately lossy translator |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Eleven verifiers, the tournament runner, the agent demo, the benchmark harness |
+| `tools/` | Twelve verifiers, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
-| `docs/decisions/` | Ten ADRs, each recording what was decided and what it cost |
+| `docs/decisions/` | Eleven ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models on the OmniBook |
 
 ## Two questions, both of which must say yes
@@ -246,6 +248,40 @@ same pattern twice: the archive's *checks* have drifted from its *substance*. Ne
 behavioural regression; both are checks that would not notice one. Recorded in
 `docs/OMEGA13-ANALYSIS.md` §4.9 for the rights holder — nothing in that archive was modified.
 
+## Two independent reasons publication is not authorised
+
+Licensing is one — ΩΣ13.9 is all-rights-reserved, and `verify_provenance.py` reports
+`PUBLICATION: BLOCKED` until the rights holder decides. Privacy is the other, and it is a separate
+question with a separate answer.
+
+`tools/verify_privacy.py` scans what `git ls-files` says publication would carry, for key blocks,
+cloud credentials, credentials in URLs, JWTs, email addresses, absolute home paths, MAC addresses,
+routable IPs and secret-shaped assignments — **and** for files that are a problem by existing,
+whatever is in them. A `*.db` in the tree is user state, and the root journal is the likely one:
+every task, target and payload a user ever handed B1, in a file with an innocuous name that sits in
+the workspace and is exactly what you want to send someone when something is wrong.
+
+It cannot say publication is allowed. The strongest thing it prints is `NO_OBJECTION`, it says in
+its own output that neither blocker clears the other, and a test asserts its vocabulary contains no
+word that reads as a clearance — one of them by running the licensing check and requiring that
+publication is still `BLOCKED`.
+
+The first run raised four objections and all four were real. One was an absolute container path in
+the analysis document; three were credential-shaped literals in the security tests' fixtures. The
+fixtures are now assembled at run time, so the scanner under test sees identical text and the
+repository stops carrying lines that look like credentials — **removing the thing reported is a
+different act from suppressing the report**, and an exclusion list for test files would have been
+the other one.
+
+Redaction is a property of the *line*, not of the rule, which the tests caught the same day. A
+database URL carrying a user and a password matches the credentials rule, which redacts, and the
+email rule, which does not — because the password-and-host portion is address-shaped. Per-rule
+redaction printed the password the other rule had just withheld.
+[ADR-0011](docs/decisions/ADR-0011-private-layer-and-publication.md).
+
+Two limits: the scan covers the working tree and **not git history**, and `%B1_HOME%` is declared
+rather than implemented — no code reads it yet.
+
 ## Licensing
 
 New B1 Local code is Apache-2.0. **This does not relicense the B1μ-DQAS ΩΣ13.9 archive**, which is
@@ -268,6 +304,7 @@ python3 tools/verify_cross_language_digest.py    # canonical bytes agree
 python3 tools/verify_cross_language_journal.py   # history agrees
 python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python peer
 python3 tools/verify_cross_language_projection.py  # three modes and two peers agree
+python3 tools/verify_privacy.py                  # what the tree would reveal
 python3 tools/verify_security_evidence.py        # a finding blocks, and cannot authorise
 python3 tools/verify_responses_vectors.py        # the shim contract discriminates
 python3 tools/verify_polyglot.py                 # fourteen languages
