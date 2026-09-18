@@ -6,6 +6,7 @@
 
 pub mod canonical;
 pub mod envelope;
+pub mod scope;
 
 pub use canonical::{
     canonical_json_bytes, digest_bytes, digest_value, CanonicalizationError, Digestable,
@@ -14,3 +15,4 @@ pub use envelope::{
     EffectBinding, Envelope, EnvelopeError, EpistemicStatus, Origin, PersistenceClass,
     SCHEMA_VERSION,
 };
+pub use scope::{scope_admits, scope_is_valid};

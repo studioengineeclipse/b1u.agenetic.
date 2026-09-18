@@ -57,6 +57,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import sqlite3
 
+from b1_policy import CapabilityPolicy
 from b1_protocol.canonical import digest_value
 from b1_protocol.envelope import Envelope
 from b1_state.journal import RootJournal
@@ -72,13 +73,17 @@ __all__ = [
     "GATE_SCHEMA_VERSION",
     "GateError",
     "AuthorityStale",
+    "CapabilityDenied",
+    "PolicyChanged",
     "PermitSpent",
     "ReconciliationRequired",
     "Permit",
     "CommitGate",
 ]
 
-GATE_SCHEMA_VERSION = "1"
+# Bumped for the capability policy: a gate opened on an older database has no
+# recorded policy, and inferring one would be inventing a permission.
+GATE_SCHEMA_VERSION = "2"
 
 
 class GateError(Exception):
@@ -87,6 +92,26 @@ class GateError(Exception):
 
 class AuthorityStale(GateError):
     """The authorization no longer matches the world it was granted against."""
+
+
+class CapabilityDenied(GateError):
+    """The standing capability policy does not permit this kind of action here.
+
+    Distinct from every other refusal in this module, and the distinction is the
+    point. The others mean "not like this, not now": fresh state, a new plan or a
+    re-approval can resolve them. This one means "not here at all", and nothing
+    the caller does resolves it -- only changing the policy, which is a
+    deliberate act with its own journal record.
+    """
+
+
+class PolicyChanged(GateError):
+    """The gate was opened under a policy other than the one in force.
+
+    Raised rather than silently adopting the one it was handed. A capability
+    policy that changed by opening a connection differently would be no policy at
+    all, so a change has to go through ``adopt_policy`` and be recorded.
+    """
 
 
 class PermitSpent(GateError):
@@ -171,8 +196,17 @@ _SCHEMA = (
 class CommitGate:
     """The single linearization point for every consequential effect."""
 
-    def __init__(self, journal: RootJournal) -> None:
+    def __init__(self, journal: RootJournal, policy: CapabilityPolicy) -> None:
+        """The policy is required, with no default.
+
+        A gate constructed without one would have to assume something, and the
+        two available assumptions are both wrong: assuming permission defeats the
+        layer, and assuming denial silently while pretending a policy exists
+        hides that nobody chose. Callers that genuinely have not decided pass
+        ``CapabilityPolicy.deny_everything()``, which fails closed and says so.
+        """
         self.journal = journal
+        self.policy = policy
         self._conn: sqlite3.Connection = journal._conn  # same connection, same lease
         self._initialise()
 
@@ -194,6 +228,31 @@ class CommitGate:
                 raise GateError(
                     f"unsupported gate schema {row['value']!r}; this build understands "
                     f"{GATE_SCHEMA_VERSION!r} and will not guess at a migration"
+                )
+
+            # The policy in force is recorded, not inferred from whatever this
+            # process happened to be handed.
+            digest = self.policy.digest()
+            stored = self._conn.execute(
+                "SELECT value FROM gate_meta WHERE key='policy_digest'"
+            ).fetchone()
+            if stored is None:
+                self._conn.execute(
+                    "INSERT INTO gate_meta(key,value) VALUES('policy_digest',?)",
+                    (digest,),
+                )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO gate_meta(key,value) VALUES('policy_json',?)",
+                    (self.policy.canonical_bytes().decode("utf-8"),),
+                )
+            elif str(stored["value"]) != digest:
+                raise PolicyChanged(
+                    f"this gate is operating under capability policy "
+                    f"{str(stored['value'])[:16]}..., and was handed "
+                    f"{digest[:16]}... ({self.policy.policy_id!r}). Changing the standing "
+                    f"policy is a configuration change: call adopt_policy() so it is "
+                    f"recorded in history and every authorization granted under the old "
+                    f"rule goes stale."
                 )
 
     def _next_epoch(self) -> int:
@@ -266,6 +325,32 @@ class CommitGate:
         which is useless at the moment someone asks why an effect was allowed.
         """
         authority.validate()
+
+        # The policy is consulted *before* the authorization exists, not before
+        # the effect. A capability the policy denies should never become an
+        # envelope a person is asked to approve -- asking someone to approve
+        # something that would be refused anyway teaches them to approve things.
+        decision = self.policy.decide(
+            authority.proposed_action, authority.target, authority.persistence_class
+        )
+        if not decision.allowed:
+            raise CapabilityDenied(
+                f"{decision.reason}. No authorization can be granted for it, so there is "
+                f"nothing here for a person to approve."
+            )
+
+        # And the envelope must name the policy actually in force. An envelope
+        # carrying some other policy's digest was reasoned about under rules that
+        # are not the ones this gate applies.
+        in_force = self.policy.digest()
+        if authority.policy_digest != in_force:
+            raise CapabilityDenied(
+                f"authority {authority.authority_id!r} was built against capability policy "
+                f"{authority.policy_digest[:16]}..., but {in_force[:16]}... "
+                f"({self.policy.policy_id!r}) is in force. An authorization reasoned about "
+                f"under different rules is not this gate's to grant."
+            )
+
         digest = authority.digest()
 
         with self.journal._lease():
@@ -310,10 +395,102 @@ class CommitGate:
                         "action": authority.proposed_action,
                         "target": authority.target,
                         "persistence_class": authority.persistence_class,
+                        "policy_digest": authority.policy_digest,
+                        "policy_matched": decision.matched,
                     },
                 )
             )
         return digest
+
+    # -- policy --------------------------------------------------------------
+
+    def adopt_policy(
+        self,
+        policy: CapabilityPolicy,
+        *,
+        event_id: str,
+        adopted_by: str,
+        reason: str,
+    ) -> str:
+        """Put a new standing capability policy in force. Returns its digest.
+
+        Honest about what this is and is not. Adopting a policy is a
+        configuration change, and the governing rule says a configuration change
+        is a persistent effect requiring its own authorization. This method does
+        **not** route itself through B1's own commit gate, because the gate's
+        every decision depends on the policy and a gate cannot gate its own
+        premise -- doing so would mean the first policy could never be adopted,
+        and a narrowing policy could be blocked by the wider one it replaces.
+
+        What is offered instead, and it is not nothing:
+
+        * the change cannot happen silently -- opening the gate with a different
+          policy raises rather than adopting it;
+        * it is journaled as ``gate.policy_adopted``, with both digests and the
+          caller's stated reason, under origin ``U``;
+        * every authorization granted under the previous policy goes stale the
+          moment it lands, because each envelope binds the policy digest it was
+          granted under.
+
+        The limit is stated in ADR-0008 rather than papered over: whoever can
+        call this can widen what B1 may do, and B1's own machinery does not stop
+        them. It records them.
+        """
+        if not reason:
+            raise GateError(
+                "adopt_policy requires a reason. A standing-policy change with no stated "
+                "reason is the one record nobody can reconstruct later"
+            )
+        new_digest = policy.digest()
+        previous = self.policy.digest()
+        if new_digest == previous:
+            return new_digest  # idempotent: adopting the identical policy changes nothing
+
+        with self.journal._lease():
+            epoch = self._next_epoch()
+            self._conn.execute(
+                "INSERT OR REPLACE INTO gate_meta(key,value) VALUES('policy_digest',?)",
+                (new_digest,),
+            )
+            self._conn.execute(
+                "INSERT OR REPLACE INTO gate_meta(key,value) VALUES('policy_json',?)",
+                (policy.canonical_bytes().decode("utf-8"),),
+            )
+            self._record(
+                Envelope.new(
+                    event_id=event_id,
+                    origin="U",  # a standing rule change is never model-derived
+                    program_identity="b1-local",
+                    execution_identity=adopted_by,
+                    attempt_identity=f"{event_id}:policy",
+                    epoch=epoch,
+                    epistemic_status="VERIFIED",
+                    payload={
+                        "kind": "gate.policy_adopted",
+                        "policy_id": policy.policy_id,
+                        "policy_digest": new_digest,
+                        "previous_policy_digest": previous,
+                        "previous_policy_id": self.policy.policy_id,
+                        "allow_count": len(policy.allow),
+                        "deny_count": len(policy.deny),
+                        "reason": reason,
+                    },
+                )
+            )
+        self.policy = policy
+        return new_digest
+
+    def policy_in_force(self) -> str:
+        """The policy digest this gate's database records, read back from it.
+
+        Reads the stored value rather than returning ``self.policy.digest()``,
+        because the interesting question is what the database says, not what this
+        object believes.
+        """
+        row = self._conn.execute(
+            "SELECT value FROM gate_meta WHERE key='policy_digest'"
+        ).fetchone()
+        return str(row["value"]) if row is not None else ""
 
     def _load_authority(self, digest: str) -> AuthorityEnvelope:
         import json
@@ -363,7 +540,9 @@ class CommitGate:
                     f"{authority.expires_at_epoch}; it is now {epoch}"
                 )
 
-            stale = authority.staleness(observed_state_digest, observed_plan_digest)
+            stale = authority.staleness(
+                observed_state_digest, observed_plan_digest, self.policy.digest()
+            )
             if stale is not None:
                 raise AuthorityStale(
                     f"authority {authority.authority_id!r} is stale: {stale}. "
@@ -523,7 +702,9 @@ class CommitGate:
             # the executor was busy, and an authorization granted against the
             # old world does not cover the new one.
             authority = self._load_authority(str(row["authority_digest"]))
-            stale = authority.staleness(observed_state_digest, observed_plan_digest)
+            stale = authority.staleness(
+                observed_state_digest, observed_plan_digest, self.policy.digest()
+            )
             if stale is not None:
                 raise AuthorityStale(
                     f"authority {authority.authority_id!r} went stale between claim and "

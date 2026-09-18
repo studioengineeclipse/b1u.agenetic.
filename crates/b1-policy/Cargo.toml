@@ -1,0 +1,10 @@
+[package]
+name = "b1-policy"
+description = "B1 Local capability policy: what may ever be authorized here"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+b1-protocol = { path = "../b1-protocol" }

@@ -35,6 +35,7 @@ from b1_authority import (  # noqa: E402
     TransitionProof,
     project_outcome,
 )
+from b1_policy import Capability, CapabilityPolicy  # noqa: E402
 from b1_protocol.canonical import digest_value  # noqa: E402
 from b1_state import RootJournal  # noqa: E402
 
@@ -43,6 +44,17 @@ STATE_B = digest_value({"tree": "dirty"})
 PLAN_A = digest_value({"phase": "B"})
 PLAN_B = digest_value({"phase": "C"})
 OBSERVED = digest_value({"bytes": 12})
+
+# Wide enough that these tests exercise the gate rather than the policy, which
+# has its own file. Irreversible is permitted here on purpose: several tests
+# below are about what the gate does with an irreversible effect, and a policy
+# that refused them first would silently turn those into policy tests.
+POLICY = CapabilityPolicy(
+    policy_id="gate-tests",
+    allow=(Capability(action="fs.write", scope=("docs/**",),
+                      max_persistence_class="IRREVERSIBLE"),),
+)
+POLICY_DIGEST = POLICY.digest()
 
 
 def authority(**overrides) -> AuthorityEnvelope:
@@ -54,6 +66,7 @@ def authority(**overrides) -> AuthorityEnvelope:
         expected_effect="docs/x.md contains the plan",
         state_digest=STATE_A,
         plan_digest=PLAN_A,
+        policy_digest=POLICY_DIGEST,
         causal_objective="ship phase B",
         persistence_class="REVERSIBLE",
         granted_at_epoch=0,
@@ -66,7 +79,7 @@ class GateTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self._dir = tempfile.TemporaryDirectory()
         self.journal = RootJournal(Path(self._dir.name) / "root.db")
-        self.gate = CommitGate(self.journal)
+        self.gate = CommitGate(self.journal, POLICY)
         self._event = 0
 
     def tearDown(self) -> None:
@@ -494,7 +507,7 @@ class RefusalsLeaveNothingBehind(GateTestCase):
         with self.journal.lease():
             conn.execute("UPDATE gate_meta SET value='99' WHERE key='schema_version'")
         with self.assertRaises(GateError) as caught:
-            CommitGate(self.journal)
+            CommitGate(self.journal, POLICY)
         self.assertIn("will not guess at a migration", str(caught.exception))
 
 

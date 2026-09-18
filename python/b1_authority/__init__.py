@@ -20,10 +20,12 @@ from .authority import (
 from .gate import (
     GATE_SCHEMA_VERSION,
     AuthorityStale,
+    CapabilityDenied,
     CommitGate,
     GateError,
     Permit,
     PermitSpent,
+    PolicyChanged,
     ReconciliationRequired,
 )
 
@@ -40,6 +42,8 @@ __all__ = [
     "CommitGate",
     "GateError",
     "AuthorityStale",
+    "CapabilityDenied",
+    "PolicyChanged",
     "PermitSpent",
     "ReconciliationRequired",
     "Permit",

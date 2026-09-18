@@ -18,10 +18,18 @@ dependencies = [
 name = "b1-authority"
 version = "0.1.0"
 dependencies = [
+ "b1-policy",
  "b1-protocol",
  "b1-state",
  "rusqlite",
  "serde_json",
+]
+
+[[package]]
+name = "b1-policy"
+version = "0.1.0"
+dependencies = [
+ "b1-protocol",
 ]
 
 [[package]]

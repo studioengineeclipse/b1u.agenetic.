@@ -10,7 +10,10 @@ pub mod authority;
 pub mod gate;
 
 pub use authority::{
-    project_outcome, scope_admits, AuthorityEnvelope, AuthorityError, Outcome, ReceiptStatus,
-    TransitionProof, AUTHORITY_SCHEMA_VERSION, PROOF_SCHEMA_VERSION,
+    project_outcome, AuthorityEnvelope, AuthorityError, Outcome, ReceiptStatus, TransitionProof,
+    AUTHORITY_SCHEMA_VERSION, PROOF_SCHEMA_VERSION,
 };
+// Re-exported from b1-protocol so callers of this crate keep one import path
+// for it. There is still exactly one implementation.
+pub use b1_protocol::scope::{scope_admits, scope_is_valid};
 pub use gate::{CommitGate, GateError, Permit, GATE_SCHEMA_VERSION};

@@ -30,16 +30,16 @@ known yet.
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 156 tests
-  rust unit and vector tests              PASS     54 tests passed
+  python unit tests                       PASS     Ran 188 tests
+  rust unit and vector tests              PASS     65 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
-  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
   tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
-  one task travels the whole path         PASS     4 runs: 1 writes, 3 refuse correctly
+  one task travels the whole path         PASS     5 runs: 1 writes, 4 refuse correctly
 
   3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
@@ -66,6 +66,7 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `schemas/b1-event-envelope-v1.schema.json` | The canonical event record. Keeps Origin, Authority, Executor and Effect as four separate fields so none can be inferred from another |
 | `crates/b1-protocol`, `python/b1_protocol` | Canonical serialization and the envelope, implemented independently in each language |
 | `crates/b1-state`, `python/b1_state` | The root journal: one global hash chain on SQLite/WAL |
+| `crates/b1-policy`, `python/b1_policy` | The standing capability policy: what may ever be authorized here |
 | `crates/b1-authority`, `python/b1_authority` | The Dual-Core Commit Gate: authority envelopes, one-time fenced permits, transition proofs |
 | `python/b1_models` | Providers, model registry, and the resource ledger that keeps a 16 GB machine honest |
 | `python/b1_tournament` | Hybrid specialist + competitor tournament with layered adjudication |
@@ -76,8 +77,36 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
 | `tools/` | Nine verifiers, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
-| `docs/decisions/` | Seven ADRs, each recording what was decided and what it cost |
+| `docs/decisions/` | Eight ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models on the OmniBook |
+
+## Two questions, both of which must say yes
+
+```
+policy      may this kind of action ever be authorized here?
+authority   is this specific action, on this target, authorized now?
+```
+
+The standing **capability policy** answers the first, and it is asked **before an authority can be
+granted** — not before the effect. A capability the policy denies never becomes an envelope anyone
+is asked to approve, because asking someone to approve something that would be refused regardless
+of their answer is how approval prompts stop being read.
+
+Default deny. Deny beats allow. Each capability carries a persistence ceiling
+(`REVERSIBLE < COMPENSATABLE < IRREVERSIBLE`), and **`UNKNOWN` is never admitted by any ceiling,
+including the widest** — an effect whose recovery class nobody could determine is not one anybody
+can permit in advance, and sorting the unclassifiable somewhere in the ordering would silently
+decide whether it is safe.
+
+The policy digest is bound into every authority envelope, so **tightening the policy makes every
+outstanding authorization stale**. Without that, narrowing what B1 may do would leave
+already-issued permissions running under the old rule — at exactly the moment someone tightens a
+policy because something went wrong.
+
+Changing the policy is journaled and cannot happen silently, but it does **not** go through B1's
+own gate: the gate's every decision depends on the policy, and a gate cannot gate its own premise.
+[ADR-0008](docs/decisions/ADR-0008-capability-policy.md) states that limit rather than papering
+over it.
 
 ## No effect without live authority
 
@@ -179,8 +208,7 @@ same four views byte-for-byte. [ADR-0007](docs/decisions/ADR-0007-projection-top
 ## Not built
 
 The chat-completions shim llama.cpp needs · security evidence · Tauri desktop · pet overlay ·
-the `%B1_HOME%` private user layer · capability policy above per-effect authorization.
-
+the `%B1_HOME%` private user layer · 
 `docs/OMEGA13-ANALYSIS.md` §11 has the dependency-ordered roadmap and §16 the next five actions.
 
 ## Two findings that change the plan
@@ -237,6 +265,7 @@ python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite
 python3 tools/run_tournament.py --probe          # what can this machine serve?
 python3 tools/run_agent.py --approve             # one task, all the way through
+python3 tools/run_agent.py --approve --forbidden-target  # the policy refuses first
 python3 tools/build_vectors.py                   # regenerate vectors (review the diff)
 
 python3 tools/verify_all.py --json > report.json                # one machine-readable report

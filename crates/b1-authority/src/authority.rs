@@ -18,8 +18,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use b1_protocol::canonical::{canonical_json_bytes, digest_value, Digestable};
+use b1_protocol::scope::{scope_admits, scope_is_valid};
 
-pub const AUTHORITY_SCHEMA_VERSION: &str = "b1-authority-envelope-1";
+pub const AUTHORITY_SCHEMA_VERSION: &str = "b1-authority-envelope-2";
 pub const PROOF_SCHEMA_VERSION: &str = "b1-transition-proof-1";
 
 /// What the executor was told. `Unknown` is not a failure: a call that timed
@@ -92,27 +93,6 @@ fn valid_id(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
 }
 
-/// Is `target` inside `scope`?
-///
-/// Exact match, or a prefix entry ending `/**`. A bare `**` admits everything
-/// and must be written out, so granting unlimited scope is a visible act.
-///
-/// Deliberately not a general glob: a `*` that crosses `/` would let
-/// `docs/*` admit `docs/secrets/key`, which is the one mistake this field
-/// exists to prevent.
-pub fn scope_admits(scope: &[String], target: &str) -> bool {
-    scope.iter().any(|entry| {
-        if entry == "**" {
-            true
-        } else if let Some(prefix) = entry.strip_suffix("**") {
-            // prefix keeps its trailing slash, so "docs/**" -> "docs/"
-            prefix.ends_with('/') && target.starts_with(prefix)
-        } else {
-            entry == target
-        }
-    })
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthorityEnvelope {
     pub authority_id: String,
@@ -122,6 +102,11 @@ pub struct AuthorityEnvelope {
     pub expected_effect: String,
     pub state_digest: String,
     pub plan_digest: String,
+    /// The standing capability policy this authorization was granted under.
+    /// Not optional: there is always a policy, even the one permitting nothing,
+    /// and an omittable field would make "no policy was in force" look the same
+    /// as "nobody filled this in".
+    pub policy_digest: String,
     pub causal_objective: String,
     pub persistence_class: String,
     pub granted_at_epoch: i64,
@@ -149,12 +134,8 @@ impl AuthorityEnvelope {
                 )));
             }
         }
-        if self.scope.is_empty() {
-            return Err(AuthorityError(
-                "scope must be non-empty; unlimited scope is written as [\"**\"] so that \
-                 granting it is a visible act rather than an omission"
-                    .into(),
-            ));
+        if let Some(problem) = scope_is_valid(&self.scope) {
+            return Err(AuthorityError(problem));
         }
         if !scope_admits(&self.scope, &self.target) {
             return Err(AuthorityError(format!(
@@ -166,6 +147,7 @@ impl AuthorityEnvelope {
         for (label, value) in [
             ("state_digest", &self.state_digest),
             ("plan_digest", &self.plan_digest),
+            ("policy_digest", &self.policy_digest),
         ] {
             if !valid_hex256(value) {
                 return Err(AuthorityError(format!(
@@ -220,6 +202,10 @@ impl AuthorityEnvelope {
         );
         map.insert("state_digest".into(), Digestable::String(self.state_digest.clone()));
         map.insert("plan_digest".into(), Digestable::String(self.plan_digest.clone()));
+        map.insert(
+            "policy_digest".into(),
+            Digestable::String(self.policy_digest.clone()),
+        );
         map.insert(
             "causal_objective".into(),
             Digestable::String(self.causal_objective.clone()),
@@ -282,7 +268,28 @@ impl AuthorityEnvelope {
     /// Planning-time approval is not permanently sufficient, so a single check
     /// at claim time would leave a window in which the world moves and the
     /// authorization does not.
-    pub fn staleness(&self, observed_state: &str, observed_plan: &str) -> Option<String> {
+    /// The policy is checked first, and it is checked at all because a standing
+    /// capability policy is an assumption this authorization rests on. If the
+    /// user narrows what B1 may do, every authorization granted under the wider
+    /// rule has to stop working -- otherwise tightening a policy would leave
+    /// already-issued permissions quietly running under the old one.
+    pub fn staleness(
+        &self,
+        observed_state: &str,
+        observed_plan: &str,
+        observed_policy: Option<&str>,
+    ) -> Option<String> {
+        if let Some(policy) = observed_policy {
+            if policy != self.policy_digest {
+                return Some(format!(
+                    "the capability policy changed since authorization: granted under \
+                     {}..., now {}.... An authorization does not outlive the rule it was \
+                     granted under",
+                    &self.policy_digest[..16],
+                    &policy[..policy.len().min(16)]
+                ));
+            }
+        }
         if observed_state != self.state_digest {
             return Some(format!(
                 "relevant state changed since authorization: authorized against {}..., \
@@ -308,7 +315,8 @@ impl AuthorityEnvelope {
         };
         const KNOWN: &[&str] = &[
             "schema_version", "authority_id", "proposed_action", "target", "scope",
-            "expected_effect", "state_digest", "plan_digest", "causal_objective",
+            "expected_effect", "state_digest", "plan_digest", "policy_digest",
+            "causal_objective",
             "persistence_class", "granted_at_epoch", "expires_at_epoch",
         ];
         let unknown: Vec<&String> = map.keys().filter(|k| !KNOWN.contains(&k.as_str())).collect();
@@ -361,6 +369,7 @@ impl AuthorityEnvelope {
             expected_effect: text(map, "expected_effect")?.to_string(),
             state_digest: text(map, "state_digest")?.to_string(),
             plan_digest: text(map, "plan_digest")?.to_string(),
+            policy_digest: text(map, "policy_digest")?.to_string(),
             causal_objective: text(map, "causal_objective")?.to_string(),
             persistence_class: text(map, "persistence_class")?.to_string(),
             granted_at_epoch,
@@ -540,6 +549,7 @@ mod tests {
             expected_effect: "docs/x.md contains the plan".into(),
             state_digest: "a".repeat(64),
             plan_digest: "b".repeat(64),
+            policy_digest: "c".repeat(64),
             causal_objective: "ship phase B".into(),
             persistence_class: "REVERSIBLE".into(),
             granted_at_epoch: 0,
@@ -553,21 +563,6 @@ mod tests {
         let rebuilt = AuthorityEnvelope::from_canonical(&original.to_canonical()).unwrap();
         assert_eq!(original, rebuilt);
         assert_eq!(original.digest(), rebuilt.digest());
-    }
-
-    #[test]
-    fn a_wildcard_does_not_cross_a_directory_boundary() {
-        let scope = vec!["docs/**".to_string()];
-        assert!(scope_admits(&scope, "docs/a.md"));
-        assert!(scope_admits(&scope, "docs/deep/b.md"));
-        assert!(!scope_admits(&scope, "secrets/key"));
-        assert!(!scope_admits(&scope, "docsecret"));
-    }
-
-    #[test]
-    fn unlimited_scope_must_be_written_out() {
-        assert!(scope_admits(&["**".to_string()], "anything/at/all"));
-        assert!(!scope_admits(&[], "anything"));
     }
 
     #[test]
@@ -597,15 +592,39 @@ mod tests {
     #[test]
     fn changed_state_or_plan_is_stale() {
         let auth = envelope();
-        assert!(auth.staleness(&"a".repeat(64), &"b".repeat(64)).is_none());
+        let policy = "c".repeat(64);
         assert!(auth
-            .staleness(&"c".repeat(64), &"b".repeat(64))
+            .staleness(&"a".repeat(64), &"b".repeat(64), Some(&policy))
+            .is_none());
+        assert!(auth
+            .staleness(&"c".repeat(64), &"b".repeat(64), Some(&policy))
             .unwrap()
             .contains("relevant state changed"));
         assert!(auth
-            .staleness(&"a".repeat(64), &"c".repeat(64))
+            .staleness(&"a".repeat(64), &"c".repeat(64), Some(&policy))
             .unwrap()
             .contains("plan changed"));
+    }
+
+    #[test]
+    fn a_changed_policy_is_stale_before_anything_else_is_checked() {
+        // State and plan are both unchanged here, so the only thing that can
+        // make this stale is the policy -- which is the point.
+        let auth = envelope();
+        let message = auth
+            .staleness(&"a".repeat(64), &"b".repeat(64), Some(&"d".repeat(64)))
+            .unwrap();
+        assert!(message.contains("capability policy changed since authorization"));
+        assert!(message.contains("does not outlive the rule it was granted under"));
+    }
+
+    #[test]
+    fn omitting_the_policy_asks_the_narrower_question() {
+        // Not "the authority is fresh" -- "nothing was checked about policy".
+        let auth = envelope();
+        assert!(auth
+            .staleness(&"a".repeat(64), &"b".repeat(64), None)
+            .is_none());
     }
 
     #[test]

@@ -171,16 +171,16 @@ In this container, on 2026-09-18:
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 156 tests
-  rust unit and vector tests              PASS     54 tests passed
+  python unit tests                       PASS     Ran 188 tests
+  rust unit and vector tests              PASS     65 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
-  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
   tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
-  one task travels the whole path         PASS     4 runs: 1 writes, 3 refuse correctly
+  one task travels the whole path         PASS     5 runs: 1 writes, 4 refuse correctly
 
   3 check(s) PARTIAL: nothing wrong was found, but not everything was observed on this machine.
 ```
@@ -550,6 +550,31 @@ Authority is re-observed **immediately before the effect**, and that observation
 captured at grant time, is what `consume` revalidates against. The first implementation passed the
 grant-time digest, which always matches, so the check was vacuous while reading as enforced.
 
+### Phase C2 — Capability policy (**COMPLETE 2026-09-18**)
+
+Objective: §16 Action 4, the layer ADR-0006 named and did not build.
+Dependencies: Phase B.
+Deliverables: `python/b1_policy`, `crates/b1-policy`, `b1_protocol.scope` /
+`b1-protocol::scope`, [ADR-0008](decisions/ADR-0008-capability-policy.md).
+
+Two questions, both of which must say yes: *may this kind of action ever be authorized here* and
+*is this specific action authorized now*. The policy is asked first, and asked **before an
+authority can be granted** rather than before the effect — a capability the policy denies never
+becomes an envelope a person is asked to approve, because asking someone to approve something that
+would be refused regardless is how approval prompts stop being read.
+
+Default deny; deny beats allow; a persistence ceiling per capability; and `UNKNOWN` never admitted
+by any ceiling, including the widest. That last one is the rule with teeth: an effect whose
+recovery class nobody could determine is not one anybody can permit in advance, and sorting the
+unclassifiable somewhere in the ordering would silently decide whether it is safe.
+
+Exit criterion: a capability the policy denies cannot be granted, let alone claimed. **Met**, and
+exceeded — see §16 Action 4.
+
+Authority state: local only. The schema break is real: `b1-authority-envelope-2` and gate schema
+`2`, with no migration, because a database written by the previous build has no recorded policy and
+inferring one would be inventing a permission.
+
 ### Phase F — Security evidence
 
 Objective: per ADR-0005 — adopt Codex Security's schemas and skills, drive them from B1's local
@@ -582,6 +607,7 @@ Every roadmap task appears exactly once.
 | Hybrid tournament | HIGH | **Done.** Deterministic evidence eliminates before models choose, and a rejected candidate cannot be reinstated by agreement |
 | End-to-end work runner | HIGH | **Done.** One task to a verified effect, with the three refusal paths checked alongside the one write |
 | OmniBook model benchmark | HIGH | Harness written, never run. The only thing that turns §6's UNKNOWNs into measurement, and it needs a model download — a persistent effect |
+| Capability policy above per-effect authorization | HIGH | **Done.** Default deny, deny-wins, a persistence ceiling, UNKNOWN never admitted, and the policy digest bound into every envelope |
 | Security evidence integration | HIGH | Consequential code and agent safety |
 | Private user layer isolation | HIGH | Public-repository requirement; depends on ADR-0003 |
 | Desktop full UI | MEDIUM | User-facing core, but after the backend contracts it renders |
@@ -675,12 +701,22 @@ Python peers derive byte-identical views, per view rather than only in aggregate
 perturbing one integer in the Rust `authority` view produces `MISMATCH` on that view and on
 `views_digest`, and on nothing else.
 
-**Action 4 — Capability policy above per-effect authorization. NEXT.**
-Objective: the layer ADR-0006 explicitly does not cover. The gate enforces *an* authorization; it
-does not yet know which actions a workspace permits at all. Input: ΩΣ13.9's `AuthorityPolicy` and
-`workspaces.policy_json` as design reference. Output: a policy checked before an authority can
-even be granted. Verification: a capability the policy denies cannot be granted, let alone
-claimed. Authority: local only.
+**Action 4 — ~~Capability policy above per-effect authorization~~. DONE 2026-09-18.**
+See [ADR-0008](decisions/ADR-0008-capability-policy.md). Verification landed wider than the stated
+criterion: a denied capability cannot be granted (so never reaches a person to approve), *and*
+both language peers refuse it by name across a process boundary, *and* tightening the policy makes
+every outstanding authorization stale.
+
+The last of those was not in the plan and is the part worth keeping. Authority goes stale when its
+assumptions change; a standing policy is an assumption every authorization rests on. Binding
+`policy_digest` into the envelope turns "the rules changed" into the same comparison the envelope
+already made for state and plan, rather than a separate mechanism that would have to be remembered.
+
+The honest limit is in the ADR rather than hidden: `adopt_policy` does not route itself through
+B1's own gate, because the gate's every decision depends on the policy and a gate cannot gate its
+own premise. Policy changes are journaled, digest-bound and cannot happen silently — but whoever
+can call it can widen what B1 may do, and B1 records them rather than stopping them. Closing that
+needs an authority rooted outside the system being governed, and none exists here.
 
 **Action 5 — Responses shim conformance vectors, before any shim code.**
 Objective: define what the translation must preserve before writing it. Input: Codex's Responses
@@ -716,7 +752,7 @@ Nine verifiers, and what would falsify each:
 | `verify_provenance.py` | The provenance record is complete in both directions | A file with a derivation marker absent from the manifest, or a manifest entry whose marker disagrees |
 | `verify_cross_language_digest.py` | Two independent implementations agree on canonical bytes | One byte of difference, printed as both strings |
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
-| `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits | Two permits, two effect records, disagreeing heads, or a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule |
+| `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits, under one agreed capability policy | Two permits, two effect records, disagreeing heads, a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule, disagreeing policy digests, or either peer granting a capability the policy denies |
 | `verify_cross_language_projection.py` | Three deployment modes derive one digest, and both peers derive the same four views | Two modes disagreeing; a file surviving `destroy()`; a mode whose read-back differs from what it wrote; either peer's view digest differing |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
 | `verify_polyglot_mutations.py` | Those checks bite | A consumer passing against a vector violating its own invariant — reported as `DECORATIVE` |
@@ -826,6 +862,9 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 21 | Own defect: the work runner's consume-time revalidation was vacuous while reading as enforced | it passed the grant-time digest to `consume()`, which always matches, under a comment claiming re-observation | `pre_effect_digest` — observed immediately before acting, which is the only value that reads the property that matters |
 | 22 | Own defect: README printed a paraphrase of `verify_all.py` as though it were the transcript, including `7/7 fields AGREED` on a row reporting a head digest | comparing the block against a real run | the tool's lines were made worth quoting, and `verify_readme_transcript.py` now checks both files that quote them |
 | 23 | Own defect: two projection tamper tests mutated a field to the value it already held | the tests failed, correctly, reporting no drift | mutations now assert they are mutations before writing |
+| 24 | ADR-0006 shipped a gate that enforces *an* authorization while knowing nothing about which actions a workspace permits at all | the only remaining barrier was a person reading every envelope, forever | ADR-0008: a standing capability policy, asked before an authority can be granted |
+| 25 | An authorization could outlive the standing rule it was granted under | nothing bound the two together, so tightening a policy would leave issued permissions running under the wider one | `policy_digest` is in the envelope and checked first by `staleness()` |
+| 26 | The scope matcher existed twice, and the policy layer would have made it three times | `b1_authority.authority._scope_admits` and its Rust twin | moved to `b1_protocol.scope` / `b1-protocol::scope`; `scope_is_valid` added, which refuses `docs/*` outright |
 
 Finding 20 is the most instructive of this increment's own defects. The workaround produced
 passing tests, because nothing in the gate's own suite exercised the journal's refusals — the hole
@@ -841,6 +880,13 @@ regression, which is the more expensive kind of defect.
 Finding 16 is worth separating from 14 and 15 because it is not a bug in a test — it is a
 reporting defect. The rows were correct and the footer was not, and the footer is where a reader
 stops.
+
+Finding 24 is the one worth sitting with, because nothing was broken. ADR-0006 said in plain
+language that it did not cover this layer, and the gate it built works exactly as designed. The
+defect was that "a person will read each envelope" had been quietly accepted as a safety property,
+and sustained human attention is the weakest guarantee a system can rest on — it degrades with
+use, and it degrades fastest under exactly the conditions that make it matter. An honest
+acknowledgement in an ADR is not a mitigation.
 
 Findings 21, 22 and 23 are one pattern in three places: **a check that cannot fail.** A staleness
 comparison against a value that always matches, a transcript quoting itself, a tamper test that
@@ -876,10 +922,15 @@ global ≠ fourteen local. No working behaviour was replaced; nothing upstream w
 locked decisions in the handoff's §27 all survive, three of them now with running code behind
 them and two (memory policy, writer ownership) now answered.
 
-**Stop reason:** further iteration on Phases A and B would add components without adding evidence.
-The four unobserved consumers need a different machine, not more design. Capability policy and
-projection topology are phases of their own, not refinements of these. Continuing to elaborate the
-substrate would be recursion mistaken for improvement.
+**Stop reason (as written after Phases A and B):** further iteration on those phases would add
+components without adding evidence. The four unobserved consumers need a different machine, not
+more design. Capability policy and projection topology are phases of their own, not refinements of
+these. Continuing to elaborate the substrate would be recursion mistaken for improvement.
+
+That held, and both named phases have since been built as phases rather than as refinements —
+Phase C (projection topology, ADR-0007) and Phase C2 (capability policy, ADR-0008). The stop reason
+is kept as written rather than revised, because a convergence judgement that gets edited after the
+fact stops being a record of anything.
 
 **Status:** `CONVERGED_FOR_CURRENT_OBJECTIVE_AND_EVIDENCE`
 
@@ -937,11 +988,11 @@ accidental vendoring of ΩΣ13.9, which becomes IRREVERSIBLE once published and 
 bidirectional verifier; the four unobserved language consumers, whose status is honestly UNKNOWN
 rather than assumed; and projection drift, mitigated by construction.
 
-**Next actions.** (1) Execute the four unobserved consumers on a machine with their toolchains.
-(2) Prove projection rebuild across three deployment modes. (3) Add capability policy above
-per-effect authorization — the layer ADR-0006 explicitly does not cover. (4) Write shim
-conformance vectors before shim code. (5) Benchmark on the OmniBook — `PLAN_READY`, authorisation
-required.
+**Next actions, as of 2026-09-18.** (2) and (3) below are now done — projection topology in
+Phase C and the capability policy in Phase C2 — leaving: (1) execute the four unobserved consumers
+on a machine with their toolchains; (4) write shim conformance vectors before shim code;
+(5) benchmark on the OmniBook — `PLAN_READY`, authorisation required, and the harness now exists so
+the remaining step is a model download and one command.
 
 **Authority state.** `PLAN_READY`. Local file creation, commits and a branch push to the
 designated branch, plus one authorised `pip install` into this ephemeral container. No repository

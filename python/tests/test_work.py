@@ -79,12 +79,13 @@ class WorkTestCase(unittest.TestCase):
             self.journal.close()
         self._dir.cleanup()
 
-    def runner(self, decide=approve) -> WorkRunner:
+    def runner(self, decide=approve, policy=None) -> WorkRunner:
         runner, journal = workspace_runner(
             root=self.root,
             journal_path=self.journal_path,
             tournament=tournament(),
             decide=decide,
+            policy=policy,
         )
         self.journal = journal
         return runner
@@ -129,8 +130,13 @@ class HappyPath(WorkTestCase):
     def test_every_stage_is_recorded_in_order(self):
         outcome = self.run_task(self.runner())
         self.assertEqual(
-            outcome.steps[:3],
-            ["proposed", "tournament: AUTHORIZATION_REQUIRED", "authority granted"],
+            outcome.steps[:4],
+            [
+                "proposed",
+                "tournament: AUTHORIZATION_REQUIRED",
+                "policy: permitted (allow:fs.write)",
+                "authority granted",
+            ],
         )
         self.assertIn("recorded: VERIFIED / VERIFIED", outcome.steps)
 
@@ -284,15 +290,50 @@ class ScopeIsEnforcedOnResolvedPaths(WorkTestCase):
             executor.apply("looks-fine.md", "should never be written")
         self.assertEqual(outside.read_text(encoding="utf-8"), "original")
 
-    def test_a_target_outside_the_authority_scope_never_gets_a_permit(self):
+    def test_a_target_the_standing_policy_forbids_never_reaches_a_person(self):
+        """An internally valid envelope is still refused by the policy above it.
+
+        The envelope would be well-formed: it admits its own target, its scope
+        is coherent, the tournament produced an answer. Every per-effect check
+        would pass. It is refused anyway, because the standing policy permits
+        writes under `notes/` and nowhere else -- and it is refused *before* the
+        approval callback runs, so nobody is asked to approve something that
+        would have been refused regardless of their answer.
+
+        Before this layer existed, the same call wrote the file.
+        """
+        seen: list[str] = []
+
+        def record_and_approve(envelope) -> AuthorityDecision:
+            seen.append(envelope.target)
+            return AuthorityDecision(granted=True, reason="approved")
+
         outcome = self.run_task(
-            self.runner(), target="secrets/key.txt", scope=("secrets/**",)
+            self.runner(decide=record_and_approve),
+            target="secrets/key.txt",
+            scope=("secrets/**",),
         )
-        # The envelope admits its own target, so it is valid; the tournament and
-        # gate still run. What matters is that the write lands where authorized.
+
+        self.assertFalse((self.root / "secrets/key.txt").exists())
+        self.assertIn("policy: denied", outcome.steps)
+        self.assertIn("does not permit it", outcome.refusal)
+        self.assertEqual(seen, [], "the approval callback was reached despite the policy")
+
+    def test_the_same_target_is_written_when_the_policy_permits_it(self):
+        """The control. Without it the test above passes for any broken runner."""
+        from b1_policy import Capability, CapabilityPolicy
+
+        wide = CapabilityPolicy(
+            policy_id="also-secrets",
+            allow=(Capability(action="fs.write", scope=("secrets/**",)),),
+        )
+        outcome = self.run_task(
+            self.runner(policy=wide),
+            target="secrets/key.txt",
+            scope=("secrets/**",),
+        )
         self.assertTrue((self.root / "secrets/key.txt").exists())
-        # And a scope that does NOT admit its target is refused at construction,
-        # which test_gate.py covers directly.
+        self.assertEqual(outcome.effect_outcome, "VERIFIED")
 
 
 class ReceiptIsNotProof(WorkTestCase):

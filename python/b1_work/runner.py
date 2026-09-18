@@ -44,6 +44,7 @@ from b1_authority import (
     GateError,
     TransitionProof,
 )
+from b1_policy import Capability, CapabilityPolicy
 from b1_protocol.canonical import digest_value
 from b1_state import RootJournal
 from b1_tournament import TaskClass, Tournament, Verdict
@@ -181,6 +182,20 @@ class WorkRunner:
         )
         epoch = max(0, self.journal.head()[2])
 
+        # -- ask the standing policy before asking a person ------------------
+        # A capability the policy forbids is refused here, before an envelope is
+        # ever put in front of someone. Presenting an approval prompt for
+        # something that would be refused anyway is how approval prompts stop
+        # being read.
+        policy_decision = self.gate.policy.decide(
+            self.executor.action, target, persistence_class
+        )
+        if not policy_decision.allowed:
+            outcome.refusal = policy_decision.reason
+            outcome.note("policy: denied")
+            return self._finish(outcome)
+        outcome.note(f"policy: permitted ({policy_decision.matched})")
+
         envelope = AuthorityEnvelope(
             authority_id=f"auth-{digest_value(task + target)[:12]}",
             proposed_action=self.executor.action,
@@ -189,6 +204,7 @@ class WorkRunner:
             expected_effect=f"{target} contains the adjudicated answer",
             state_digest=state_digest,
             plan_digest=plan_digest,
+            policy_digest=self.gate.policy.digest(),
             causal_objective=objective,
             persistence_class=persistence_class,
             granted_at_epoch=epoch,
@@ -304,12 +320,34 @@ class WorkRunner:
         return outcome
 
 
+def workspace_notes_policy(scope: tuple[str, ...] = ("notes/**",)) -> CapabilityPolicy:
+    """The narrowest policy that lets the demo do its one job.
+
+    Reversible file writes, under one directory, and nothing else. Offered as a
+    named function rather than a default argument so that what B1 is permitted
+    to do is something a reader can look up, and something a caller has to pass.
+    """
+    return CapabilityPolicy(
+        policy_id="workspace-notes",
+        allow=(
+            Capability(
+                action="fs.write",
+                scope=scope,
+                max_persistence_class="REVERSIBLE",
+                reason="the runner's only job is writing an adjudicated answer to a note",
+            ),
+        ),
+        description="Reversible note writes inside one directory. Nothing else.",
+    )
+
+
 def workspace_runner(
     *,
     root: Path,
     journal_path: Path,
     tournament: Tournament,
     decide: Callable[[AuthorityEnvelope], AuthorityDecision] = always_refuse,
+    policy: CapabilityPolicy | None = None,
 ) -> tuple[WorkRunner, RootJournal]:
     """Assemble a runner over a workspace directory.
 
@@ -320,7 +358,7 @@ def workspace_runner(
     from .effects import FileWriteEffect
 
     journal = RootJournal(journal_path)
-    gate = CommitGate(journal)
+    gate = CommitGate(journal, policy or workspace_notes_policy())
     runner = WorkRunner(
         journal=journal,
         gate=gate,

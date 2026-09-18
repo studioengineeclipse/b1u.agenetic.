@@ -14,18 +14,24 @@
 //! losing by the gate's rule and losing by a database lock are different
 //! outcomes and only one of them is the design working.
 //!
+//! The policy file is positional and required. A peer that could be started
+//! without one would have to assume a policy, and a gate whose standing rules
+//! depend on how a process was launched has no standing rules.
+//!
 //! Usage:
-//!   b1-gate-peer <db> digest-authority   <authority.json>
-//!   b1-gate-peer <db> grant              <authority.json> <event_id>
-//!   b1-gate-peer <db> claim              <request.json>
-//!   b1-gate-peer <db> consume            <request.json>
-//!   b1-gate-peer <db> inspect            <effect_identity>
+//!   b1-gate-peer <db> <policy.json> digest-authority <authority.json>
+//!   b1-gate-peer <db> <policy.json> grant            <authority.json> <event_id>
+//!   b1-gate-peer <db> <policy.json> claim            <request.json>
+//!   b1-gate-peer <db> <policy.json> consume          <request.json>
+//!   b1-gate-peer <db> <policy.json> inspect          <effect_identity>
+//!   b1-gate-peer <db> <policy.json> policy-digest
 
 use std::collections::BTreeMap;
 use std::fs;
 
 use b1_authority::authority::{AuthorityEnvelope, ReceiptStatus, TransitionProof};
 use b1_authority::gate::{CommitGate, GateError};
+use b1_policy::CapabilityPolicy;
 use b1_protocol::canonical::Digestable;
 use b1_state::journal::RootJournal;
 
@@ -64,7 +70,13 @@ fn fail(message: String) -> ! {
     emit(serde_json::json!({"status": "ERROR", "message": message}))
 }
 
-fn open(db: &str) -> CommitGate {
+fn policy_from(path: &str) -> Result<CapabilityPolicy, String> {
+    let parsed = read_json(path)?;
+    let value = Digestable::from_json(&parsed).map_err(|e| format!("{path}: {e}"))?;
+    CapabilityPolicy::from_canonical(&value).map_err(|e| format!("{path}: {e}"))
+}
+
+fn open(db: &str, policy: CapabilityPolicy) -> CommitGate {
     let journal = match RootJournal::open(db) {
         Ok(journal) => journal,
         Err(err) => fail(format!("cannot open journal: {err}")),
@@ -77,7 +89,7 @@ fn open(db: &str) -> CommitGate {
     {
         fail(format!("cannot set busy_timeout: {err}"));
     }
-    match CommitGate::open(journal) {
+    match CommitGate::open(journal, policy) {
         Ok(gate) => gate,
         Err(err) => refused(err.kind(), err.to_string()),
     }
@@ -85,17 +97,30 @@ fn open(db: &str) -> CommitGate {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 2 {
-        fail("usage: b1-gate-peer <db> <command> [args...]".into());
+    if args.len() < 3 {
+        fail("usage: b1-gate-peer <db> <policy.json> <command> [args...]".into());
     }
-    let (db, command) = (&args[0], args[1].as_str());
+    let (db, policy_path, command) = (&args[0], &args[1], args[2].as_str());
+    let policy = match policy_from(policy_path) {
+        Ok(p) => p,
+        Err(e) => fail(e),
+    };
 
     match command {
+        // The policy digest as this peer computes it, without touching the
+        // database. Both peers must agree on it before either grants anything,
+        // because it is what an authority envelope binds itself to.
+        "policy-digest" => emit(serde_json::json!({
+            "status": "OK",
+            "digest": policy.digest(),
+            "policy_id": policy.policy_id,
+        })),
+
         // Digest an authority envelope without touching the database, so the
         // verifier can confirm both peers compute the same digest before it
         // relies on that digest meaning the same thing to both.
         "digest-authority" => {
-            let authority = match authority_from(&args[2]) {
+            let authority = match authority_from(&args[3]) {
                 Ok(a) => a,
                 Err(e) => fail(e),
             };
@@ -111,19 +136,19 @@ fn main() {
         }
 
         "grant" => {
-            let authority = match authority_from(&args[2]) {
+            let authority = match authority_from(&args[3]) {
                 Ok(a) => a,
                 Err(e) => fail(e),
             };
-            let gate = open(db);
-            match gate.grant(&authority, &args[3], "rust-peer") {
+            let gate = open(db, policy.clone());
+            match gate.grant(&authority, &args[4], "rust-peer") {
                 Ok(digest) => emit(serde_json::json!({"status": "OK", "digest": digest})),
                 Err(err) => refused(err.kind(), err.to_string()),
             }
         }
 
         "claim" => {
-            let request = match read_json(&args[2]) {
+            let request = match read_json(&args[3]) {
                 Ok(r) => r,
                 Err(e) => fail(e),
             };
@@ -139,7 +164,7 @@ fn main() {
                 Err(e) => fail(e),
             };
 
-            let gate = open(db);
+            let gate = open(db, policy.clone());
             match gate.claim_permit(
                 fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6],
                 fields[7], fields[8],
@@ -156,7 +181,7 @@ fn main() {
         }
 
         "consume" => {
-            let request = match read_json(&args[2]) {
+            let request = match read_json(&args[3]) {
                 Ok(r) => r,
                 Err(e) => fail(e),
             };
@@ -208,7 +233,7 @@ fn main() {
                 postcondition_evidence: evidence,
             };
 
-            let gate = open(db);
+            let gate = open(db, policy.clone());
             let observed_state = match text(&request, "observed_state_digest") {
                 Ok(v) => v.to_string(),
                 Err(e) => fail(e),
@@ -238,7 +263,7 @@ fn main() {
         }
 
         "inspect" => {
-            let gate = open(db);
+            let gate = open(db, policy.clone());
             let head = match gate.journal().head() {
                 Ok(head) => head,
                 Err(err) => fail(format!("cannot read head: {err}")),
@@ -247,7 +272,7 @@ fn main() {
                 Ok(report) => report,
                 Err(err) => fail(format!("cannot verify: {err}")),
             };
-            let outcome = gate.effect_outcome(&args[2]);
+            let outcome = gate.effect_outcome(&args[3]);
 
             let mut payload: BTreeMap<String, serde_json::Value> = BTreeMap::new();
             payload.insert("status".into(), "OK".into());

@@ -132,9 +132,11 @@ def summarise_tournament(timeout: int) -> dict[str, object]:
 def summarise_agent(timeout: int) -> dict[str, object]:
     """Does a task travel the whole path, and does each gate refuse correctly?
 
-    Four runs, because one success proves less than one success plus three
+    Five runs, because one success proves less than one success plus four
     refusals. A runner that wrote the file unconditionally would pass the first
-    and fail the rest.
+    and fail the rest, and each refusal comes from a different layer: the
+    standing policy, the approval, the staleness check, and the deterministic
+    verifier.
     """
     cases = [
         ([], "does not exist", "unapproved writes nothing"),
@@ -143,6 +145,10 @@ def summarise_agent(timeout: int) -> dict[str, object]:
          "stale authority refuses"),
         (["--approve", "--bad-answer"], "does not exist",
          "failed verification refuses"),
+        # Approved *and* well-answered, and still refused: the policy is above
+        # the approval, so the run never reaches a person.
+        (["--approve", "--forbidden-target"], "Approval was never the question",
+         "policy refuses"),
     ]
     observed: list[str] = []
     for flags, expected, label in cases:
@@ -205,10 +211,16 @@ def summarise_gate(report: dict[str, object]) -> str:
         return "no steps reported"
     claim = str(steps.get("concurrent_claim", "?"))
     permits = claim.split(" granted", 1)[0] if " granted" in claim else "?"
+    denied = (
+        "both refuse denied"
+        if steps.get("rust_denied_capability") == "CAPABILITY_DENIED"
+        and steps.get("python_denied_capability") == "CapabilityDenied"
+        else "DENIAL NOT ENFORCED"
+    )
     return (
         f"{permits} permit, {steps.get('effect_records_in_history', '?')} effect, "
         f"losers {steps.get('claim_loser_kind', '?')}/"
-        f"{steps.get('consume_loser_kind', '?')}, heads "
+        f"{steps.get('consume_loser_kind', '?')}, {denied}, heads "
         f"{steps.get('head_agreement', '?')}"
     )
 

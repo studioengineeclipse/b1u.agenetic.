@@ -21,6 +21,7 @@ from .runner import (
     WorkOutcome,
     WorkRunner,
     always_refuse,
+    workspace_notes_policy,
     workspace_runner,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "WorkOutcome",
     "WorkRunner",
     "always_refuse",
+    "workspace_notes_policy",
     "workspace_runner",
 ]

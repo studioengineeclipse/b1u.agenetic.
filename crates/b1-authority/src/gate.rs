@@ -32,6 +32,7 @@ use b1_protocol::canonical::{digest_value, Digestable};
 use b1_protocol::envelope::{
     EffectBinding, Envelope, EpistemicStatus, Origin, PersistenceClass,
 };
+use b1_policy::CapabilityPolicy;
 use b1_state::journal::{JournalError, RootJournal};
 use rusqlite::params;
 
@@ -39,7 +40,9 @@ use crate::authority::{
     project_outcome, AuthorityEnvelope, AuthorityError, TransitionProof,
 };
 
-pub const GATE_SCHEMA_VERSION: &str = "1";
+// Bumped for the capability policy: a gate opened on an older database has no
+// recorded policy, and inferring one would be inventing a permission.
+pub const GATE_SCHEMA_VERSION: &str = "2";
 
 #[derive(Debug)]
 pub enum GateError {
@@ -47,6 +50,14 @@ pub enum GateError {
     Refused(String),
     /// The authorization no longer matches the world it was granted against.
     AuthorityStale(String),
+    /// The standing capability policy does not permit this kind of action here.
+    ///
+    /// Distinct from every other refusal, and the distinction is the point: the
+    /// others mean "not like this, not now". This one means "not here at all",
+    /// and only changing the policy resolves it.
+    CapabilityDenied(String),
+    /// The gate was opened under a policy other than the one in force.
+    PolicyChanged(String),
     /// This permit has already been consumed. Permits are one-time by design.
     PermitSpent(String),
     /// An earlier attempt's outcome is unknown; read back before retrying.
@@ -61,6 +72,8 @@ impl fmt::Display for GateError {
         match self {
             GateError::Refused(m)
             | GateError::AuthorityStale(m)
+            | GateError::CapabilityDenied(m)
+            | GateError::PolicyChanged(m)
             | GateError::PermitSpent(m)
             | GateError::ReconciliationRequired(m) => f.write_str(m),
             GateError::Journal(e) => write!(f, "journal: {e}"),
@@ -97,6 +110,8 @@ impl GateError {
         match self {
             GateError::Refused(_) => "REFUSED",
             GateError::AuthorityStale(_) => "AUTHORITY_STALE",
+            GateError::CapabilityDenied(_) => "CAPABILITY_DENIED",
+            GateError::PolicyChanged(_) => "POLICY_CHANGED",
             GateError::PermitSpent(_) => "PERMIT_SPENT",
             GateError::ReconciliationRequired(_) => "RECONCILIATION_REQUIRED",
             GateError::Journal(_) => "JOURNAL_ERROR",
@@ -193,6 +208,7 @@ const SCHEMA: &[&str] = &[
 
 pub struct CommitGate {
     journal: RootJournal,
+    policy: CapabilityPolicy,
 }
 
 impl fmt::Debug for CommitGate {
@@ -204,14 +220,25 @@ impl fmt::Debug for CommitGate {
 }
 
 impl CommitGate {
-    pub fn open(journal: RootJournal) -> Result<Self> {
-        let gate = CommitGate { journal };
+    /// The policy is required, with no default.
+    ///
+    /// A gate constructed without one would have to assume something, and both
+    /// available assumptions are wrong: assuming permission defeats the layer,
+    /// and assuming denial silently while pretending a policy exists hides that
+    /// nobody chose. Callers that genuinely have not decided pass
+    /// `CapabilityPolicy::deny_everything()`, which fails closed and says so.
+    pub fn open(journal: RootJournal, policy: CapabilityPolicy) -> Result<Self> {
+        let gate = CommitGate { journal, policy };
         gate.initialise()?;
         Ok(gate)
     }
 
     pub fn journal(&self) -> &RootJournal {
         &self.journal
+    }
+
+    pub fn policy(&self) -> &CapabilityPolicy {
+        &self.policy
     }
 
     fn initialise(&self) -> Result<()> {
@@ -244,10 +271,63 @@ impl CommitGate {
                 }
                 Some(_) => {}
             }
+
+            // The policy in force is recorded, not inferred from whatever this
+            // process happened to be handed.
+            let digest = self.policy.digest();
+            let stored: Option<String> = self
+                .journal
+                .connection()
+                .query_row(
+                    "SELECT value FROM gate_meta WHERE key='policy_digest'",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
+            match stored {
+                None => {
+                    self.journal.connection().execute(
+                        "INSERT INTO gate_meta(key,value) VALUES('policy_digest',?1)",
+                        params![digest],
+                    )?;
+                    self.journal.connection().execute(
+                        "INSERT OR REPLACE INTO gate_meta(key,value) VALUES('policy_json',?1)",
+                        params![String::from_utf8(self.policy.canonical_bytes())
+                            .expect("canonical is UTF-8")],
+                    )?;
+                }
+                Some(found) if found != digest => {
+                    return Err(GateError::PolicyChanged(format!(
+                        "this gate is operating under capability policy {}..., and was \
+                         handed {}... ({:?}). Changing the standing policy is a \
+                         configuration change: it has to be adopted so it is recorded in \
+                         history and every authorization granted under the old rule goes \
+                         stale",
+                        &found[..found.len().min(16)],
+                        &digest[..digest.len().min(16)],
+                        self.policy.policy_id
+                    )));
+                }
+                Some(_) => {}
+            }
             Ok(())
         })();
         lease.finish(outcome.is_ok())?;
         outcome
+    }
+
+    /// The policy digest this gate's database records, read back from it.
+    pub fn policy_in_force(&self) -> Result<String> {
+        let value: Option<String> = self
+            .journal
+            .connection()
+            .query_row(
+                "SELECT value FROM gate_meta WHERE key='policy_digest'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(value.unwrap_or_default())
     }
 
     fn next_epoch(&self) -> Result<i64> {
@@ -286,6 +366,35 @@ impl CommitGate {
         granted_by: &str,
     ) -> Result<String> {
         authority.validate()?;
+
+        // The policy is consulted *before* the authorization exists, not before
+        // the effect. A capability the policy denies should never become an
+        // envelope a person is asked to approve.
+        let decision = self.policy.decide(
+            &authority.proposed_action,
+            &authority.target,
+            &authority.persistence_class,
+        );
+        if !decision.allowed {
+            return Err(GateError::CapabilityDenied(format!(
+                "{}. No authorization can be granted for it, so there is nothing here for \
+                 a person to approve.",
+                decision.reason
+            )));
+        }
+        let in_force = self.policy.digest();
+        if authority.policy_digest != in_force {
+            return Err(GateError::CapabilityDenied(format!(
+                "authority {:?} was built against capability policy {}..., but {}... ({:?}) \
+                 is in force. An authorization reasoned about under different rules is not \
+                 this gate's to grant.",
+                authority.authority_id,
+                &authority.policy_digest[..authority.policy_digest.len().min(16)],
+                &in_force[..in_force.len().min(16)],
+                self.policy.policy_id
+            )));
+        }
+
         let digest = authority.digest();
 
         let lease = self.journal.lease()?;
@@ -397,7 +506,7 @@ impl CommitGate {
                 }
             }
 
-            if let Some(stale) = authority.staleness(observed_state, observed_plan) {
+            if let Some(stale) = authority.staleness(observed_state, observed_plan, Some(&self.policy.digest())) {
                 return Err(GateError::AuthorityStale(format!(
                     "authority {:?} is stale: {stale}. The persistence gate has closed \
                      again and needs fresh authorization.",
@@ -622,7 +731,7 @@ impl CommitGate {
 
             // Effect-time authority revalidation.
             let authority = self.load_authority(&authority_digest)?;
-            if let Some(stale) = authority.staleness(observed_state, observed_plan) {
+            if let Some(stale) = authority.staleness(observed_state, observed_plan, Some(&self.policy.digest())) {
                 return Err(GateError::AuthorityStale(format!(
                     "authority {:?} went stale between claim and consume: {stale}. The \
                      effect is not recorded as authorized.",

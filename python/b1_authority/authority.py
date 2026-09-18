@@ -26,10 +26,17 @@ Scope
 -----
 ``scope`` bounds what the authority may touch, and is checked independently of
 ``target``. An envelope that authorizes writing one file does not authorize
-writing its neighbour, even though both are "a file write". Entries are exact
-strings, or prefixes ending ``/**``. Deliberately not ``fnmatch``: its ``*``
-crosses ``/``, so ``docs/*`` would match ``docs/secrets/key``, which is the one
-mistake this field exists to prevent.
+writing its neighbour, even though both are "a file write". The matcher lives in
+``b1_protocol.scope`` because the capability policy bounds targets too, and two
+implementations of "inside the scope" that drifted apart would mean a policy and
+an authorization disagreeing about the same string.
+
+Policy
+------
+``policy_digest`` binds the envelope to the standing capability policy in force
+when it was granted. Tightening that policy therefore makes every outstanding
+authorization stale, which is the handoff's own rule applied to the assumption
+that sits above a single authorization rather than inside it.
 """
 from __future__ import annotations
 
@@ -38,6 +45,7 @@ import re
 
 from b1_protocol.canonical import canonical_json_bytes, digest_value
 from b1_protocol.envelope import PERSISTENCE_CLASSES
+from b1_protocol.scope import scope_admits, scope_is_valid
 
 __all__ = [
     "AUTHORITY_SCHEMA_VERSION",
@@ -50,7 +58,7 @@ __all__ = [
     "project_outcome",
 ]
 
-AUTHORITY_SCHEMA_VERSION = "b1-authority-envelope-1"
+AUTHORITY_SCHEMA_VERSION = "b1-authority-envelope-2"
 PROOF_SCHEMA_VERSION = "b1-transition-proof-1"
 
 # What the executor reported. Note UNKNOWN: a call that timed out, or whose
@@ -69,25 +77,6 @@ class AuthorityError(Exception):
     """An authority envelope or transition proof is not usable as given."""
 
 
-def _scope_admits(scope: tuple[str, ...], target: str) -> bool:
-    """Is ``target`` inside ``scope``?
-
-    Exact match, or a prefix entry ending ``/**`` which admits anything beneath
-    that directory. A bare ``**`` admits everything and has to be written out,
-    so that granting unlimited scope is a visible act rather than a default.
-    """
-    for entry in scope:
-        if entry == "**":
-            return True
-        if entry.endswith("/**"):
-            prefix = entry[:-2]  # keep the trailing slash
-            if target.startswith(prefix):
-                return True
-        elif entry == target:
-            return True
-    return False
-
-
 @dataclass(frozen=True, slots=True)
 class AuthorityEnvelope:
     """One user authorization, bound to one specific intended effect."""
@@ -99,6 +88,11 @@ class AuthorityEnvelope:
     expected_effect: str
     state_digest: str
     plan_digest: str
+    # The standing capability policy this authorization was granted under.
+    # Required, with no default: there is always a policy, even if it is the one
+    # that permits nothing, and a field that could be omitted would make "no
+    # policy was in force" indistinguishable from "nobody filled this in".
+    policy_digest: str
     causal_objective: str
     persistence_class: str
     granted_at_epoch: int
@@ -122,17 +116,15 @@ class AuthorityEnvelope:
                     f"{name} must be non-empty: an envelope missing it cannot be compared "
                     f"against what actually happens"
                 )
-        if not self.scope:
-            raise AuthorityError(
-                "scope must be non-empty; unlimited scope is written as ('**',) so that "
-                "granting it is a visible act rather than an omission"
-            )
-        if not _scope_admits(self.scope, self.target):
+        problem = scope_is_valid(self.scope)
+        if problem is not None:
+            raise AuthorityError(problem)
+        if not scope_admits(self.scope, self.target):
             raise AuthorityError(
                 f"target {self.target!r} is outside its own scope {self.scope!r}; "
                 f"an envelope that does not admit its own target authorizes nothing"
             )
-        for name in ("state_digest", "plan_digest"):
+        for name in ("state_digest", "plan_digest", "policy_digest"):
             value = getattr(self, name)
             if not _HEX256.match(value):
                 raise AuthorityError(f"{name} must be 64 lowercase hex characters")
@@ -165,6 +157,7 @@ class AuthorityEnvelope:
             "expected_effect": self.expected_effect,
             "state_digest": self.state_digest,
             "plan_digest": self.plan_digest,
+            "policy_digest": self.policy_digest,
             "causal_objective": self.causal_objective,
             "persistence_class": self.persistence_class,
             "granted_at_epoch": self.granted_at_epoch,
@@ -201,20 +194,44 @@ class AuthorityEnvelope:
                 f"authority {self.authority_id!r} authorizes target {self.target!r}, "
                 f"not {target!r}; authorization for one effect does not authorize another"
             )
-        if not _scope_admits(self.scope, target):
+        if not scope_admits(self.scope, target):
             return False, (
                 f"target {target!r} is outside scope {self.scope!r}"
             )
         return True, ""
 
-    def staleness(self, observed_state_digest: str, observed_plan_digest: str) -> str | None:
+    def staleness(
+        self,
+        observed_state_digest: str,
+        observed_plan_digest: str,
+        observed_policy_digest: str | None = None,
+    ) -> str | None:
         """Why this authority is stale, or ``None`` if it still holds.
 
         Called at effect time, and called *again* before the effect is
         committed. Planning-time approval is not permanently sufficient, so a
         single check at claim time would leave a window in which the world moves
         and the authorization does not.
+
+        The policy is checked first, and it is checked at all because a standing
+        capability policy is an assumption this authorization rests on. If the
+        user narrows what B1 may do, every authorization granted under the wider
+        rule has to stop working -- otherwise tightening a policy would leave
+        already-issued permissions quietly running under the old one, which is
+        the failure the whole staleness discipline exists to prevent, one layer
+        up.
+
+        ``observed_policy_digest`` is optional only so that a caller who has no
+        policy context can still ask the narrower question. A caller that omits
+        it is not told the authority is fresh; it is told nothing about policy,
+        which is a different answer and the gate always supplies the argument.
         """
+        if observed_policy_digest is not None and observed_policy_digest != self.policy_digest:
+            return (
+                f"the capability policy changed since authorization: granted under "
+                f"{self.policy_digest[:16]}..., now {observed_policy_digest[:16]}.... "
+                f"An authorization does not outlive the rule it was granted under"
+            )
         if observed_state_digest != self.state_digest:
             return (
                 f"relevant state changed since authorization: authorized against "
@@ -231,7 +248,8 @@ class AuthorityEnvelope:
     def from_dict(cls, data: dict[str, object]) -> "AuthorityEnvelope":
         known = {
             "schema_version", "authority_id", "proposed_action", "target", "scope",
-            "expected_effect", "state_digest", "plan_digest", "causal_objective",
+            "expected_effect", "state_digest", "plan_digest", "policy_digest",
+            "causal_objective",
             "persistence_class", "granted_at_epoch", "expires_at_epoch",
         }
         unknown = set(data) - known
@@ -247,6 +265,7 @@ class AuthorityEnvelope:
                 expected_effect=str(data["expected_effect"]),
                 state_digest=str(data["state_digest"]),
                 plan_digest=str(data["plan_digest"]),
+                policy_digest=str(data["policy_digest"]),
                 causal_objective=str(data["causal_objective"]),
                 persistence_class=str(data["persistence_class"]),
                 granted_at_epoch=data["granted_at_epoch"],  # type: ignore[arg-type]

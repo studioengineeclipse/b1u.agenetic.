@@ -38,7 +38,12 @@ from b1_tournament import (  # noqa: E402
     Verifier,
     VerifierResult,
 )
-from b1_work import AuthorityDecision, FileWriteEffect, workspace_runner  # noqa: E402
+from b1_work import (  # noqa: E402
+    AuthorityDecision,
+    FileWriteEffect,
+    workspace_notes_policy,
+    workspace_runner,
+)
 
 TASK = "State, in one line, what a hash chain proves and what it does not."
 ANSWER = "It proves a record was altered; it does not restore the original."
@@ -80,6 +85,8 @@ def main() -> int:
                         help="edit the target after authorization, to show the gate refuse")
     parser.add_argument("--bad-answer", action="store_true",
                         help="feed an overclaiming answer, to show verification eliminate it")
+    parser.add_argument("--forbidden-target", action="store_true",
+                        help="aim at a target the standing policy forbids, to show it refuse")
     parser.add_argument("--workspace", help="keep the workspace here instead of a temp dir")
     args = parser.parse_args()
 
@@ -93,6 +100,13 @@ def main() -> int:
         verifiers=(MentionsBothHalves(),),
         deterministic_participant=DeterministicProvider(answers={TASK: answer}),
     )
+
+    # The forbidden target is outside the standing policy's scope, and nothing
+    # else about the run changes. The refusal therefore comes from the policy
+    # layer alone, which is the only way to show that the layer is doing
+    # anything.
+    target = "vault/private-key.txt" if args.forbidden_target else TARGET
+    scope = ("vault/**",) if args.forbidden_target else ("notes/**",)
 
     temp = None
     if args.workspace:
@@ -115,7 +129,7 @@ def main() -> int:
         print(f"    bound to state   {envelope.state_digest[:16]}...")
 
         if args.interfere:
-            path = workspace / TARGET
+            path = workspace / target
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("another actor wrote here first", encoding="utf-8")
             print("\n    [--interfere] another actor just edited the target")
@@ -135,15 +149,18 @@ def main() -> int:
 
     print("\nB1 agent\n" + "=" * 66)
     print(f"task      {TASK}")
-    print(f"target    {TARGET}")
+    print(f"target    {target}")
     print(f"workspace {workspace}")
+    policy = workspace_notes_policy()
+    print(f"policy    {policy.policy_id}: "
+          f"{', '.join(f'{c.action} in {list(c.scope)} up to {c.max_persistence_class}' for c in policy.allow)}")
 
     try:
         outcome = runner.run(
             task=TASK,
-            target=TARGET,
+            target=target,
             objective="record what a hash chain does and does not prove",
-            scope=("notes/**",),
+            scope=scope,
         )
 
         print("-" * 66)
@@ -163,7 +180,7 @@ def main() -> int:
         if outcome.refusal:
             print(f"\n  REFUSED: {outcome.refusal}")
 
-        path = workspace / TARGET
+        path = workspace / target
         print(f"\n  file on disk     "
               f"{path.read_text(encoding='utf-8')[:80]!r}" if path.exists()
               else "\n  file on disk     does not exist")
@@ -172,7 +189,11 @@ def main() -> int:
               f"verify_ok={journal.verify().ok}")
         print("=" * 66)
 
-        if not args.approve:
+        if args.forbidden_target:
+            print("\nThe standing capability policy permits reversible writes under")
+            print("notes/ and nowhere else, so this was refused before anyone was")
+            print("asked to approve it. Approval was never the question.\n")
+        elif not args.approve:
             print("\nNothing was written, because nothing approved it. That is the")
             print("default. Run again with --approve.\n")
         elif args.interfere:

@@ -35,6 +35,7 @@ from b1_authority import (  # noqa: E402
     PermitSpent,
     TransitionProof,
 )
+from b1_policy import Capability, CapabilityPolicy  # noqa: E402
 from b1_protocol.canonical import digest_value  # noqa: E402
 from b1_state import RootJournal  # noqa: E402
 
@@ -47,6 +48,13 @@ OBSERVED = digest_value({"bytes": 12})
 # reason, so the tests assert on the refusal message instead of the exit path.
 BUSY_TIMEOUT_MS = 20_000
 
+# Both peers must be handed the *same* policy: opening the gate under a
+# different one now raises, which is itself the point of the policy layer.
+POLICY = CapabilityPolicy(
+    policy_id="concurrency-tests",
+    allow=(Capability(action="fs.write", scope=("docs/**",)),),
+)
+
 
 def authority() -> AuthorityEnvelope:
     return AuthorityEnvelope(
@@ -57,6 +65,7 @@ def authority() -> AuthorityEnvelope:
         expected_effect="docs/x.md contains the plan",
         state_digest=STATE,
         plan_digest=PLAN,
+        policy_digest=POLICY.digest(),
         causal_objective="prove the gate linearises",
         persistence_class="REVERSIBLE",
         granted_at_epoch=0,
@@ -69,7 +78,7 @@ class PeerConnection:
     def __init__(self, path: Path) -> None:
         self.journal = RootJournal(path)
         self.journal.connection.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-        self.gate = CommitGate(self.journal)
+        self.gate = CommitGate(self.journal, POLICY)
 
     def close(self) -> None:
         self.journal.close()

@@ -47,6 +47,7 @@ from b1_authority import (  # noqa: E402
     PermitSpent,
     TransitionProof,
 )
+from b1_policy import Capability, CapabilityPolicy  # noqa: E402
 from b1_protocol.canonical import digest_value  # noqa: E402
 from b1_state import RootJournal  # noqa: E402
 
@@ -54,6 +55,24 @@ STATE = digest_value({"tree": "clean"})
 PLAN = digest_value({"phase": "B"})
 OBSERVED = digest_value({"bytes": 12})
 BUSY_TIMEOUT_MS = 20_000
+
+# One policy, handed to both peers. They must agree on its digest before either
+# grants anything, because that digest is what the authority envelope binds
+# itself to -- if they disagreed, one peer's authorization would read as stale
+# to the other and the race would be decided by a mismatch rather than by the
+# gate.
+POLICY = CapabilityPolicy(
+    policy_id="xlang-gate",
+    allow=(
+        Capability(action="fs.write", scope=("docs/**",),
+                   max_persistence_class="REVERSIBLE"),
+    ),
+    deny=(
+        Capability(action="fs.write", scope=("docs/secrets/**",),
+                   reason="proves the deny list survives the language boundary"),
+    ),
+    description="Reversible writes under docs/, except secrets.",
+)
 
 AUTHORITY = dict(
     authority_id="auth-xlang",
@@ -63,6 +82,7 @@ AUTHORITY = dict(
     expected_effect="docs/x.md contains the plan",
     state_digest=STATE,
     plan_digest=PLAN,
+    policy_digest=POLICY.digest(),
     causal_objective="prove the gate linearises across languages",
     persistence_class="REVERSIBLE",
     granted_at_epoch=0,
@@ -72,13 +92,25 @@ AUTHORITY = dict(
 def python_peer(db: Path) -> tuple[RootJournal, CommitGate]:
     journal = RootJournal(db)
     journal.connection.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-    return journal, CommitGate(journal)
+    return journal, CommitGate(journal, POLICY)
 
 
-def rust(db: Path, *args: str, timeout: int) -> dict[str, object]:
+def policy_file(tmp: Path) -> Path:
+    """The policy, written once in canonical form for the Rust peer to read.
+
+    Canonical bytes rather than pretty JSON: the Rust peer parses it and
+    re-digests it, and the digest it computes has to match the one Python bound
+    into the envelope.
+    """
+    path = tmp / "policy.json"
+    path.write_bytes(POLICY.canonical_bytes())
+    return path
+
+
+def rust(db: Path, *args: str, timeout: int, policy: Path | None = None) -> dict[str, object]:
     completed = subprocess.run(
         ["cargo", "run", "--quiet", "-p", "b1-authority", "--bin", "b1-gate-peer",
-         "--", str(db), *args],
+         "--", str(db), str(policy or db.parent / "policy.json"), *args],
         cwd=ROOT, text=True, capture_output=True, timeout=timeout,
     )
     if completed.returncode != 0:
@@ -111,7 +143,8 @@ def check_digest_agreement(tmp: Path, timeout: int) -> tuple[bool, str]:
         json.dumps(envelope.to_canonical_dict(), indent=2, sort_keys=True), encoding="utf-8"
     )
 
-    result = rust(tmp / "unused.db", "digest-authority", str(path), timeout=timeout)
+    result = rust(tmp / "unused.db", "digest-authority", str(path), timeout=timeout,
+                  policy=tmp / "policy.json")
     if result.get("status") != "OK":
         return False, f"the Rust peer could not digest the envelope: {result.get('message')}"
 
@@ -197,6 +230,28 @@ def verify(timeout: int) -> dict[str, object]:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
+        policy_path = policy_file(tmp)
+
+        # Step 0 -- agreement on the standing rules. Checked before anything
+        # else because both later steps bind this digest into the envelope, so
+        # a disagreement here would surface downstream as a stale authority and
+        # be diagnosed as the wrong thing.
+        policy_result = rust(tmp / "unused.db", "policy-digest",
+                             timeout=timeout, policy=policy_path)
+        if policy_result.get("status") != "OK":
+            errors.append(
+                f"the Rust peer could not read the policy: {policy_result.get('message')}"
+            )
+            steps["policy_digest_agreement"] = "ERROR"
+            return {"status": "FAIL", "errors": errors, "steps": steps}
+        if str(policy_result["digest"]) != POLICY.digest():
+            steps["policy_digest_agreement"] = "MISMATCH"
+            errors.append(
+                f"capability policy digests disagree: python={POLICY.digest()} "
+                f"rust={policy_result['digest']}"
+            )
+            return {"status": "FAIL", "errors": errors, "steps": steps}
+        steps["policy_digest_agreement"] = "AGREED"
 
         # Step 1 -- agreement on what an authorization even is.
         ok, reason = check_digest_agreement(tmp, timeout)
@@ -213,6 +268,46 @@ def verify(timeout: int) -> dict[str, object]:
             )
         finally:
             journal.close()
+
+        # Step 1b -- the deny list has to survive the language boundary. A
+        # policy the Rust peer parsed but did not enforce would pass every
+        # digest comparison above and still let the effect through, which is
+        # the failure a digest-only check cannot see.
+        denied = dict(AUTHORITY)
+        denied.update(
+            authority_id="auth-denied",
+            target="docs/secrets/key",
+            scope=("docs/secrets/**",),
+            expected_effect="docs/secrets/key is written",
+        )
+        denied_path = tmp / "authority-denied.json"
+        denied_path.write_text(
+            json.dumps(AuthorityEnvelope(**denied).to_canonical_dict(),
+                       indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        rust_denied = rust(db, "grant", str(denied_path), "evt-denied",
+                           timeout=timeout, policy=policy_path)
+        steps["rust_denied_capability"] = str(rust_denied.get("kind", rust_denied.get("status")))
+        if steps["rust_denied_capability"] != "CAPABILITY_DENIED":
+            errors.append(
+                f"the Rust peer did not refuse a denied capability: {rust_denied}"
+            )
+
+        python_denied = "NOT_REFUSED"
+        journal, gate = python_peer(db)
+        try:
+            gate.grant(AuthorityEnvelope(**denied), event_id="evt-denied-py",
+                       granted_by="user")
+        except GateError as exc:
+            python_denied = type(exc).__name__
+        finally:
+            journal.close()
+        steps["python_denied_capability"] = python_denied
+        if python_denied != "CapabilityDenied":
+            errors.append(
+                f"the Python peer did not refuse a denied capability: {python_denied}"
+            )
 
         # Step 2 -- two peers claim one target. Exactly one permit may issue.
         claim_request = {
