@@ -1,0 +1,25 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "refusal",
+  "input": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "hello",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "qwen3:4b",
+    "safety_identifier": "user-42"
+  },
+  "invariant": "R10",
+  "kind": "request",
+  "refusal_contains": "request carries field(s) this translator does not understand: ['safety_identifie",
+  "vector": "r10-unknown-field-is-refused",
+  "why": "A future Responses field that constrains behaviour -- a safety setting, a cache key, a seed -- must not be discarded on the way through. Forwarding the request without it means something different from what was asked."
+}

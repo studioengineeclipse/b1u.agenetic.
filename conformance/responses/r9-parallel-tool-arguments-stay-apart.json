@@ -1,0 +1,137 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected_events": [
+    {
+      "call_id": "call_a1",
+      "delta": "{\"path\": \"",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.delta"
+    },
+    {
+      "call_id": "call_b2",
+      "delta": "{\"path\": \"",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.delta"
+    },
+    {
+      "call_id": "call_a1",
+      "delta": "a.md\"}",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.delta"
+    },
+    {
+      "call_id": "call_b2",
+      "delta": "b.md\"}",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.delta"
+    },
+    {
+      "arguments": "{\"path\": \"a.md\"}",
+      "call_id": "call_a1",
+      "name": "read_file",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.done"
+    },
+    {
+      "arguments": "{\"path\": \"b.md\"}",
+      "call_id": "call_b2",
+      "name": "read_file",
+      "response_id": "resp_b1_vector",
+      "type": "response.function_call_arguments.done"
+    },
+    {
+      "response_id": "resp_b1_vector",
+      "type": "response.completed"
+    }
+  ],
+  "input": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"path\": \"",
+                  "name": "read_file"
+                },
+                "id": "call_a1",
+                "index": 0,
+                "type": "function"
+              }
+            ]
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"path\": \"",
+                  "name": "read_file"
+                },
+                "id": "call_b2",
+                "index": 1,
+                "type": "function"
+              }
+            ]
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "a.md\"}"
+                },
+                "index": 0
+              }
+            ]
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "b.md\"}"
+                },
+                "index": 1
+              }
+            ]
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "tool_calls",
+          "index": 0
+        }
+      ]
+    }
+  ],
+  "invariant": "R9",
+  "kind": "stream",
+  "vector": "r9-parallel-tool-arguments-stay-apart",
+  "why": "Two tool calls stream interleaved, distinguished only by index. Merging them produces one malformed argument blob that parses as neither call."
+}

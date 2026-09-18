@@ -1,0 +1,44 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "messages": [
+      {
+        "content": "Answer in one sentence. Never guess.",
+        "role": "system"
+      },
+      {
+        "content": "What does a hash chain prove?",
+        "role": "user"
+      }
+    ],
+    "model": "qwen3:4b"
+  },
+  "expected_notes": [
+    {
+      "detail": "instructions carried as a system message",
+      "invariant": "R1",
+      "severity": "PRESERVED"
+    }
+  ],
+  "input": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "What does a hash chain prove?",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "instructions": "Answer in one sentence. Never guess.",
+    "model": "qwen3:4b"
+  },
+  "invariant": "R1",
+  "kind": "request",
+  "vector": "r1-instructions-survive",
+  "why": "A Responses request carries the system prompt out of band. Chat-completions has no such field, so it has to become a system message -- first, and unaltered. Dropping it produces answers that look entirely normal."
+}

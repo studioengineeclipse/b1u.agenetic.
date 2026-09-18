@@ -1,0 +1,53 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "messages": [
+      {
+        "content": "[b1-shim: reasoning carried from a Responses reasoning item]\nThe user asked twice; they want the limit, not the guarantee.",
+        "role": "assistant"
+      },
+      {
+        "content": "and what can it not do?",
+        "role": "user"
+      }
+    ],
+    "model": "qwen3:4b"
+  },
+  "expected_notes": [
+    {
+      "detail": "a reasoning item was carried as a labelled assistant message; chat-completions has no reasoning item and the server will treat it as ordinary context",
+      "invariant": "R5",
+      "severity": "REPRESENTED_DIFFERENTLY"
+    }
+  ],
+  "input": {
+    "input": [
+      {
+        "id": "rs_1",
+        "summary": [
+          {
+            "text": "The user asked twice; they want the limit, not the guarantee.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "text": "and what can it not do?",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "qwen3:4b"
+  },
+  "invariant": "R5",
+  "kind": "request",
+  "vector": "r5-reasoning-is-never-silently-dropped",
+  "why": "Chat-completions has no reasoning item, which makes dropping it the path of least resistance. It is also the single highest-value case for a local reasoning model, and it degrades invisibly: nothing errors, the answers just get worse. Carried in a labelled form, with a note saying the shape changed."
+}

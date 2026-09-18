@@ -1,0 +1,78 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "direction": "a Responses-API client (Codex-derived) driving a chat-completions server (llama.cpp and most OpenAI-compatible servers)",
+  "written_before_the_shim": true,
+  "why_first": "A translation layer is judged by what it preserves. Written after the code, a conformance suite tends to describe what the code already does; written first, it describes what the code must do, and the difference shows up exactly where the translation is lossy.",
+  "epistemic_basis": {
+    "wire_api_selection": "VERIFIED 2026-09-16 from codex-rs/model-provider-info/src/lib.rs. Codex has one WireApi variant, Responses; wire_api = \"chat\" is a hard error. See ADR-0002.",
+    "payload_field_spellings": "WORKING_ASSUMPTION. The Codex archive is no longer present in this environment, so the exact field names below were not re-derived from source in this pass. They follow the documented Responses and chat-completions surfaces. Every invariant is stated in terms of what must survive rather than what it is called, so a corrected spelling changes the vectors and not the contract -- but the vectors must be re-checked against the archive before any shim is written against them.",
+    "restated": "Nothing here is claimed as VERIFIED that was not measured. A vector that encodes a guessed field name is still a real test of the invariant it carries; it is not evidence about the wire."
+  },
+  "invariants": [
+    {
+      "id": "R1",
+      "name": "instructions survive",
+      "requires": "A top-level `instructions` string reaches the server as a system message, first, unaltered.",
+      "failure_if_violated": "The system prompt is silently dropped. The model answers without its constraints and the answer looks normal."
+    },
+    {
+      "id": "R2",
+      "name": "tool declarations survive exactly",
+      "requires": "Each declared tool keeps its name, description and parameter schema byte-for-byte through the shape change from flat to nested.",
+      "failure_if_violated": "A subtly altered parameter schema makes the model emit arguments the caller cannot parse, or worse, can."
+    },
+    {
+      "id": "R3",
+      "name": "a tool call survives with identical arguments",
+      "requires": "call_id, name and the arguments string round-trip unchanged. Arguments are carried as an opaque string and never re-serialised.",
+      "failure_if_violated": "Re-serialising JSON can reorder keys or renormalise numbers. The call still parses and is no longer the call the model made."
+    },
+    {
+      "id": "R4",
+      "name": "a tool result rejoins its call",
+      "requires": "A function_call_output reaches the server as a tool message carrying the same call_id.",
+      "failure_if_violated": "The result is attributed to the wrong call, or to none, and the model reasons from an answer to a question it did not ask."
+    },
+    {
+      "id": "R5",
+      "name": "reasoning is never silently dropped",
+      "requires": "Chat-completions has no reasoning item. Reasoning content must either survive in a named, labelled form or make the translation refuse -- and either way the caller is told, by a translation note.",
+      "failure_if_violated": "The single highest-value case for a local reasoning model degrades invisibly. Nothing errors; the answers just get worse."
+    },
+    {
+      "id": "R6",
+      "name": "a truncated completion never reads as complete",
+      "requires": "finish_reason `length` becomes status `incomplete` with a stated reason, never `completed`.",
+      "failure_if_violated": "This is receipt-is-not-postcondition in the transport layer: a cut-off answer presented as a finished one."
+    },
+    {
+      "id": "R7",
+      "name": "usage is reported, never invented",
+      "requires": "Token counts are renamed, not computed. A server that reports no usage produces a translation with no usage, not zeros.",
+      "failure_if_violated": "Zero-valued counts are indistinguishable from measured ones, and a resource ledger built on them budgets against fiction."
+    },
+    {
+      "id": "R8",
+      "name": "streamed text concatenates to the whole answer",
+      "requires": "Concatenating every text delta yields exactly the text a non-streamed response would carry.",
+      "failure_if_violated": "A dropped or reordered delta produces an answer that is wrong in a way no status field reports."
+    },
+    {
+      "id": "R9",
+      "name": "streamed tool arguments concatenate to the same string",
+      "requires": "Argument fragments concatenate to the identical arguments string, and are emitted under the call they belong to.",
+      "failure_if_violated": "Interleaved parallel tool calls merge into one malformed argument blob."
+    },
+    {
+      "id": "R10",
+      "name": "an unknown field is refused, not dropped",
+      "requires": "A request carrying a field the translator does not understand is refused. It is never forwarded minus the field.",
+      "failure_if_violated": "A future Responses field that constrains behaviour -- a safety setting, a cache key, a seed -- is quietly discarded and the request means something else."
+    }
+  ],
+  "not_covered": [
+    "Transport. No HTTP server, no SSE framing, no backpressure, no connection handling, no error mapping. This contract is about the meaning of the bytes, not about moving them.",
+    "Provider quirks. Real servers deviate from the documented shapes, and those deviations are discovered by running against them, not by reasoning about them here.",
+    "Authentication, retries, timeouts and rate limits."
+  ]
+}

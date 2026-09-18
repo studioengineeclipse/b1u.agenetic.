@@ -171,12 +171,13 @@ In this container, on 2026-09-18:
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 188 tests
+  python unit tests                       PASS     Ran 217 tests
   rust unit and vector tests              PASS     65 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
+  shim vectors define and discriminate    PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
   tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
@@ -575,6 +576,39 @@ Authority state: local only. The schema break is real: `b1-authority-envelope-2`
 `2`, with no migration, because a database written by the previous build has no recorded policy and
 inferring one would be inventing a permission.
 
+### Phase D2 — The shim's contract (**COMPLETE 2026-09-18**), the shim itself (**NOT BUILT**)
+
+Objective: §16 Action 5. Define what the Responses↔chat-completions translation must preserve,
+before writing the thing that performs it.
+Dependencies: ADR-0002's constraint.
+Deliverables: `contracts/b1-responses-shim-v1.json`, `conformance/responses/` (10 vectors),
+`python/b1_shim` (reference translation and lossy translators),
+`tools/verify_responses_vectors.py`, [ADR-0009](decisions/ADR-0009-responses-shim-contract.md).
+
+The ordering is the decision. A translation layer is judged entirely by what it preserves, and a
+conformance suite written after the code tends to describe what the code already does; written
+first it describes what the code must do, and the difference appears exactly where the translation
+is lossy.
+
+Two invariants carry most of the weight. **R6** is receipt ≠ postcondition arriving in the
+transport layer: `finish_reason: "length"` must become `incomplete`, never `completed`, because a
+cut-off answer presented as finished is the same class of error as a provider's success receipt
+taken as proof of effect. **R5** is the judgement call: chat-completions has no reasoning item, so
+it is carried in a conspicuously labelled form *and* the caller is handed a note saying the shape
+changed — "never silently" is satisfied by the note, not by the carrying, and the verifier checks
+the notes as part of the vector.
+
+Throughout, refusal beats best effort. `Untranslatable` is raised for a pre-parsed arguments
+object, an unrecognised content part, a missing `finish_reason`, a streamed tool call with no
+index, a reasoning item with no readable summary, and any unknown request field. In every one of
+those a best-effort translation was available and was rejected: a translator that degrades quietly
+is worse than one that stops, because the caller cannot tell a faithful translation from a lossy
+one that happened to still parse.
+
+**Not built, and not claimed:** the shim. No HTTP server, no SSE framing, no backpressure, no error
+mapping, no retries. `python/b1_shim` is the meaning of the bytes, not the moving of them, and
+calling it "the shim" would be the overclaim this project exists to avoid.
+
 ### Phase F — Security evidence
 
 Objective: per ADR-0005 — adopt Codex Security's schemas and skills, drive them from B1's local
@@ -600,7 +634,8 @@ Every roadmap task appears exactly once.
 | Dual-Core Commit Gate | CRITICAL | **Done.** A Rust process and a Python process race through it and exactly one effect commits |
 | Fencing, idempotency, effect identity | CRITICAL | **Done.** Journal-level fencing, per-domain gate fences, one-time permits, and authority revalidated at both claim and consume time |
 | Deterministic replay and recovery | HIGH | **Done for the journal.** Not done for work-runtime recovery contracts |
-| Responses shim | HIGH | Only llama.cpp needs it: Ollama and LM Studio already speak `/v1/responses` (ADR-0002) |
+| Responses shim contract | HIGH | **Done.** Ten invariants, ten vectors, ten lossy translators each caught. Spellings still assumed |
+| Responses shim itself | MEDIUM | Only llama.cpp needs it: Ollama and LM Studio already speak `/v1/responses` (ADR-0002). Transport only; the meaning is specified |
 | Model provider and resource ledger | HIGH | **Done, unmeasured.** Adapters, registry and ledger exist; every size and latency figure is still a declared estimate |
 | Projection topology | HIGH | **Done.** Three modes produce one digest, and the Rust peer derives the same four views |
 | Fourteen-language conformance | HIGH | **Done, 10/14 observed.** U-level invariant |
@@ -718,11 +753,22 @@ own premise. Policy changes are journaled, digest-bound and cannot happen silent
 can call it can widen what B1 may do, and B1 records them rather than stopping them. Closing that
 needs an authority rooted outside the system being governed, and none exists here.
 
-**Action 5 — Responses shim conformance vectors, before any shim code.**
-Objective: define what the translation must preserve before writing it. Input: Codex's Responses
-API surface; a chat-completions server's surface. Output: vectors for streaming, tool calls and
-reasoning items, asserting on translated bytes. Dependency: none. Verification: vectors exist and
-fail against a deliberately lossy translator. Authority: local only.
+**Action 5 — ~~Responses shim conformance vectors, before any shim code~~. DONE 2026-09-18.**
+See [ADR-0009](decisions/ADR-0009-responses-shim-contract.md). Ten invariants, one vector each, and
+a deliberately lossy translator per invariant; all ten vectors catch theirs. The verifier also
+reports each vector's *collateral* — which other lossy translators it fails — because a vector that
+every one of them fails is broad rather than precise, and a broad vector makes a real regression
+harder to locate rather than easier.
+
+Two things are worth carrying forward. First, the verifier found a defect in its own suite on its
+first run: the R3 vector was DECORATIVE, because the arguments string it used survives a JSON
+round-trip unchanged. Third occurrence in this project of a check that could not fail, second time
+a verifier rather than a person caught it.
+
+Second, the field spellings are **WORKING_ASSUMPTION** and the verifier says so on every run. The
+Codex archive is no longer present in this environment, so the key names were not re-derived from
+source in this pass. ADR-0002's wire-api finding is VERIFIED; these key names are not, and a shim
+written against these vectors must re-check them against the archive first.
 
 **Deferred — OmniBook model benchmark.** Still the only way to replace §6 item 1's UNKNOWNs with
 measurement, and still **`PLAN_READY` — AUTHORIZATION REQUIRED**: downloading a model file is a
@@ -745,7 +791,7 @@ a drift that already happened once is not a hypothetical worth trusting to care.
 
 ## 17. Verification Strategy
 
-Nine verifiers, and what would falsify each:
+Ten verifiers, and what would falsify each:
 
 | Verifier | Establishes | Falsified by |
 |---|---|---|
@@ -754,6 +800,7 @@ Nine verifiers, and what would falsify each:
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
 | `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits, under one agreed capability policy | Two permits, two effect records, disagreeing heads, a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule, disagreeing policy digests, or either peer granting a capability the policy denies |
 | `verify_cross_language_projection.py` | Three deployment modes derive one digest, and both peers derive the same four views | Two modes disagreeing; a file surviving `destroy()`; a mode whose read-back differs from what it wrote; either peer's view digest differing |
+| `verify_responses_vectors.py` | The shim contract's vectors define what a translation must preserve, and discriminate | A vector the reference fails; a vector that also passes the translator built to break its invariant (`DECORATIVE`); an invariant with no vector |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
 | `verify_polyglot_mutations.py` | Those checks bite | A consumer passing against a vector violating its own invariant — reported as `DECORATIVE` |
 | `verify_readme_transcript.py` | README.md quotes the verifier rather than paraphrasing it | A transcript line the tool does not print; a named check that does not exist; a check the transcript omits |
@@ -865,6 +912,7 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 24 | ADR-0006 shipped a gate that enforces *an* authorization while knowing nothing about which actions a workspace permits at all | the only remaining barrier was a person reading every envelope, forever | ADR-0008: a standing capability policy, asked before an authority can be granted |
 | 25 | An authorization could outlive the standing rule it was granted under | nothing bound the two together, so tightening a policy would leave issued permissions running under the wider one | `policy_digest` is in the envelope and checked first by `staleness()` |
 | 26 | The scope matcher existed twice, and the policy layer would have made it three times | `b1_authority.authority._scope_admits` and its Rust twin | moved to `b1_protocol.scope` / `b1-protocol::scope`; `scope_is_valid` added, which refuses `docs/*` outright |
+| 27 | Own defect: the R3 shim vector was DECORATIVE -- its arguments string survives a JSON round-trip unchanged, so it passed the lossy translator built to break it | `verify_responses_vectors.py` reported it on its first run | a string where a round-trip inserts whitespace, renormalises `1e1` to `10.0` and escapes non-ASCII |
 
 Finding 20 is the most instructive of this increment's own defects. The workaround produced
 passing tests, because nothing in the gate's own suite exercised the journal's refusals — the hole
@@ -888,12 +936,13 @@ and sustained human attention is the weakest guarantee a system can rest on — 
 use, and it degrades fastest under exactly the conditions that make it matter. An honest
 acknowledgement in an ADR is not a mitigation.
 
-Findings 21, 22 and 23 are one pattern in three places: **a check that cannot fail.** A staleness
+Findings 21, 22, 23 and 27 are one pattern in four places: **a check that cannot fail.** A staleness
 comparison against a value that always matches, a transcript quoting itself, a tamper test that
 changes nothing. None of the three produced a failing test, and two of them produced a *passing*
-one, which is worse than failing because it is evidence-shaped. The only reason all three were
-found is that each was read for whether it *could* report a problem rather than for whether it
-did. That habit is the one this project most depends on and the one nothing in it can automate.
+one, which is worse than failing because it is evidence-shaped. Three of the four were found by reading a check for whether it
+*could* report a problem rather than for whether it did. The fourth, 27, was found by a verifier
+built to ask that question mechanically -- which is the only part of the habit that can be
+automated, and only for the suites that have a deliberately broken counterpart to test against.
 
 Finding 22 also closes a loop with findings 5 and 18: the "checks drifted from substance" pattern
 was first recorded against the upstream archive, then found here, in this document's own §4.7 and

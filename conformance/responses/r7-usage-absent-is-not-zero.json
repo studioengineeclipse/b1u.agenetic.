@@ -1,0 +1,45 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "id": "resp_b1_vector",
+    "object": "response",
+    "output": [
+      {
+        "content": [
+          {
+            "text": "It proves alteration.",
+            "type": "output_text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "status": "completed"
+  },
+  "expected_notes": [
+    {
+      "detail": "the server reported no usage, so the translation carries none. Absent is not zero",
+      "invariant": "R7",
+      "severity": "PRESERVED"
+    }
+  ],
+  "input": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "It proves alteration.",
+          "role": "assistant"
+        }
+      }
+    ],
+    "id": "chatcmpl-10"
+  },
+  "invariant": "R7",
+  "kind": "response",
+  "vector": "r7-usage-absent-is-not-zero",
+  "why": "Zero-valued counts are indistinguishable from measured ones. A resource ledger built on them budgets against fiction, which is precisely the failure `b1_models.ledger` exists to avoid."
+}

@@ -243,6 +243,24 @@ def summarise_projection(report: dict[str, object]) -> str:
     )
 
 
+def summarise_shim(report: dict[str, object]) -> str:
+    """How many vectors exist, and how many of them actually catch something.
+
+    Both numbers, always. "10 vectors" on its own is the claim a suite makes
+    about itself; "10 catch a lossy translator" is the one worth printing, and
+    printing only the first would be the decorative-participation failure the
+    polyglot harness already exists to prevent.
+    """
+    results = report.get("results") or {}
+    if not isinstance(results, dict):
+        return "no results reported"
+    catching = sum(1 for r in results.values() if r.get("discriminates") == "CATCHES")
+    return (
+        f"{report.get('vectors', '?')} vectors for {report.get('invariants', '?')} "
+        f"invariants, {catching} catch a lossy translator; spellings ASSUMED"
+    )
+
+
 def summarise_json_tool(
     label: str, script: str, timeout: int, extract=None
 ) -> dict[str, object]:
@@ -350,6 +368,12 @@ def main() -> int:
             "verify_cross_language_projection.py",
             args.timeout,
             summarise_projection,
+        ),
+        summarise_json_tool(
+            "shim vectors define and discriminate",
+            "verify_responses_vectors.py",
+            args.timeout,
+            summarise_shim,
         ),
         summarise_json_tool(
             "fourteen-language participation",

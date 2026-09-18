@@ -1,0 +1,56 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "id": "resp_b1_vector",
+    "incomplete_details": {
+      "reason": "max_output_tokens"
+    },
+    "object": "response",
+    "output": [
+      {
+        "content": [
+          {
+            "text": "A hash chain proves that a record",
+            "type": "output_text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "status": "incomplete",
+    "usage": {
+      "input_tokens": 42,
+      "output_tokens": 8
+    }
+  },
+  "expected_notes": [
+    {
+      "detail": "finish_reason 'length' became status 'incomplete'; the answer is cut off",
+      "invariant": "R6",
+      "severity": "PRESERVED"
+    }
+  ],
+  "input": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "content": "A hash chain proves that a record",
+          "role": "assistant"
+        }
+      }
+    ],
+    "id": "chatcmpl-9",
+    "usage": {
+      "completion_tokens": 8,
+      "prompt_tokens": 42
+    }
+  },
+  "invariant": "R6",
+  "kind": "response",
+  "vector": "r6-truncation-never-reads-as-complete",
+  "why": "receipt != postcondition, arriving in the transport layer. A cut-off answer presented as a finished one is the same class of error as a provider's success receipt taken as proof of effect."
+}

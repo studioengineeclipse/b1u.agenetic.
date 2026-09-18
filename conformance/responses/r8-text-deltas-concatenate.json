@@ -1,0 +1,75 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected_events": [
+    {
+      "delta": "It proves",
+      "response_id": "resp_b1_vector",
+      "type": "response.output_text.delta"
+    },
+    {
+      "delta": " ",
+      "response_id": "resp_b1_vector",
+      "type": "response.output_text.delta"
+    },
+    {
+      "delta": "alteration.",
+      "response_id": "resp_b1_vector",
+      "type": "response.output_text.delta"
+    },
+    {
+      "response_id": "resp_b1_vector",
+      "text": "It proves alteration.",
+      "type": "response.output_text.done"
+    },
+    {
+      "response_id": "resp_b1_vector",
+      "type": "response.completed"
+    }
+  ],
+  "input": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "It proves"
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": " "
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "alteration."
+          },
+          "index": 0
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop",
+          "index": 0
+        }
+      ]
+    }
+  ],
+  "invariant": "R8",
+  "kind": "stream",
+  "vector": "r8-text-deltas-concatenate",
+  "why": "A dropped delta produces an answer that is wrong in a way no status field reports. Whitespace-only deltas are the ones a tidying pass eats, and they are load-bearing."
+}

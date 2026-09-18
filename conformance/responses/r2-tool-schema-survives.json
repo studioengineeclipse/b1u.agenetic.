@@ -1,0 +1,83 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "messages": [
+      {
+        "content": "read notes/a.md",
+        "role": "user"
+      }
+    ],
+    "model": "qwen3:4b",
+    "tools": [
+      {
+        "function": {
+          "description": "Read a file from the workspace.",
+          "name": "read_file",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "expected_notes": [
+    {
+      "detail": "1 tool(s) carried",
+      "invariant": "R2",
+      "severity": "PRESERVED"
+    }
+  ],
+  "input": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "read notes/a.md",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "qwen3:4b",
+    "tools": [
+      {
+        "description": "Read a file from the workspace.",
+        "name": "read_file",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "invariant": "R2",
+  "kind": "request",
+  "vector": "r2-tool-schema-survives",
+  "why": "Responses declares tools flat; chat-completions nests them under `function`. The shape changes and the contents must not -- a parameter schema that gains a constraint on the way through changes what the model is allowed to emit."
+}

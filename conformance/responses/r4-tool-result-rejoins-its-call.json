@@ -1,0 +1,90 @@
+{
+  "contract": "b1-responses-shim-v1",
+  "expect": "translation",
+  "expected": {
+    "messages": [
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"path\":\"notes/a.md\",\"limit\":1e1,\"note\":\"café\"}",
+              "name": "read_file"
+            },
+            "id": "call_a1",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "content": "a hash chain proves damage, not repair",
+        "role": "tool",
+        "tool_call_id": "call_a1"
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"path\": \"notes/b.md\"}",
+              "name": "read_file"
+            },
+            "id": "call_b2",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "content": "second",
+        "role": "tool",
+        "tool_call_id": "call_b2"
+      }
+    ],
+    "model": "qwen3:4b"
+  },
+  "expected_notes": [
+    {
+      "detail": "call 'call_a1' carried verbatim",
+      "invariant": "R3",
+      "severity": "PRESERVED"
+    },
+    {
+      "detail": "call 'call_b2' carried verbatim",
+      "invariant": "R3",
+      "severity": "PRESERVED"
+    }
+  ],
+  "input": {
+    "input": [
+      {
+        "arguments": "{\"path\":\"notes/a.md\",\"limit\":1e1,\"note\":\"café\"}",
+        "call_id": "call_a1",
+        "name": "read_file",
+        "type": "function_call"
+      },
+      {
+        "call_id": "call_a1",
+        "output": "a hash chain proves damage, not repair",
+        "type": "function_call_output"
+      },
+      {
+        "arguments": "{\"path\": \"notes/b.md\"}",
+        "call_id": "call_b2",
+        "name": "read_file",
+        "type": "function_call"
+      },
+      {
+        "call_id": "call_b2",
+        "output": "second",
+        "type": "function_call_output"
+      }
+    ],
+    "model": "qwen3:4b"
+  },
+  "invariant": "R4",
+  "kind": "request",
+  "vector": "r4-tool-result-rejoins-its-call",
+  "why": "A result with no call_id is attributed to whatever the server guesses. The model then reasons from an answer to a question it did not ask."
+}
