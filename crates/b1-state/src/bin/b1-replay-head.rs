@@ -49,6 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let head = journal.head()?;
         let report = journal.verify()?;
+        let records = journal.read_all()?;
+        let views = b1_state::build_views(&records);
         Ok(serde_json::json!({
             "appended_head": head.digest,
             "record_count": head.record_count,
@@ -57,7 +59,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "pure_replay_head": RootJournal::replay_digest(&envelopes),
             "verify_ok": report.ok,
             "findings": report.findings,
-            "projection_digest": b1_state::projection_digest(&journal.read_all()?),
+            "projection_digest": b1_state::projection_digest(&records),
+            // The derived views, digested. A separate question from
+            // `projection_digest` above: that one asks whether two peers see the
+            // same history, this one whether they derive the same views from it.
+            "views_digest": b1_state::views_digest(&views),
+            "view_digests": b1_state::view_digests(&views),
         }))
     })();
     let _ = std::fs::remove_dir_all(&dir);

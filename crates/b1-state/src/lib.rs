@@ -5,8 +5,10 @@
 //! rebuild what the other wrote.
 
 pub mod journal;
+pub mod projection;
 
 pub use journal::{
     chain_digest, projection_digest, Head, JournalError, JournalRecord, Lease, RootJournal,
     VerificationReport, GENESIS, SCHEMA_VERSION,
 };
+pub use projection::{build_views, view_digests, views_digest, VIEW_NAMES};

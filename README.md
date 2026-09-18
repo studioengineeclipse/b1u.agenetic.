@@ -30,11 +30,12 @@ known yet.
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 132 tests
-  rust unit and vector tests              PASS     49 tests passed
+  python unit tests                       PASS     Ran 156 tests
+  rust unit and vector tests              PASS     54 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
   tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
@@ -69,12 +70,13 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `python/b1_models` | Providers, model registry, and the resource ledger that keeps a 16 GB machine honest |
 | `python/b1_tournament` | Hybrid specialist + competitor tournament with layered adjudication |
 | `python/b1_work` | The runner that joins them: task in, verified effect out. `effects.py` is the only code that touches the world |
+| `python/b1_projection` | Four derived views, three deployment modes, one digest they must all agree on |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Eight verifiers, the tournament runner, the agent demo, the benchmark harness |
+| `tools/` | Nine verifiers, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
-| `docs/decisions/` | Six ADRs, each recording what was decided and what it cost |
+| `docs/decisions/` | Seven ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models on the OmniBook |
 
 ## No effect without live authority
@@ -145,11 +147,39 @@ a winner. None does. The database owns the lease and both peers queue for it on 
 there is no privileged process to fail over from. See
 [ADR-0001](docs/decisions/ADR-0001-root-journal.md).
 
+## Three deployment modes, and no third truth
+
+A projection is history rearranged for reading. B1 stores it three ways, and the claim worth
+proving is not that three modes exist — it is that **the mode is a storage decision and cannot
+change what is true**.
+
+```
+compact       one file                            fewest inodes, one atomic replace
+modular       one file per view, plus a manifest  a subsystem can be rebuilt alone
+audit-replay  nothing at all                      every read replays from the journal
+```
+
+Audit-replay is not the degenerate case, it is the honest baseline: it cannot drift, because it
+stores nothing. The other two buy speed and pay for it with `check()`, which compares stored views
+against views rebuilt from the journal. On disagreement the projection is wrong by definition —
+there is no merge and no case where a derived view is the more current one.
+
+`check()` deliberately ignores the stored file's own digest. A file that recorded its digest and
+had both edited together would pass that check, so the comparison is against the journal instead,
+and a test damages a compact projection *and repairs its self-declared digests* to prove the
+ordering matters. The `heads` view carries `chain_head` and `replayed_head` separately for the
+same reason: a projection over a damaged journal must report the damage, not launder it into a
+clean-looking summary.
+
+All of it rests on the views being a pure function of the record sequence — nothing consults the
+clock, the filesystem, or which mode is in use. That is what makes the three modes provably
+equivalent rather than separately tested into agreement, and it is why the Rust peer derives the
+same four views byte-for-byte. [ADR-0007](docs/decisions/ADR-0007-projection-topology.md).
+
 ## Not built
 
-Projection topology (compact / modular / audit-replay modes) · the chat-completions shim llama.cpp
-needs · security evidence · Tauri desktop · pet overlay · the `%B1_HOME%` private user layer ·
-capability policy above per-effect authorization.
+The chat-completions shim llama.cpp needs · security evidence · Tauri desktop · pet overlay ·
+the `%B1_HOME%` private user layer · capability policy above per-effect authorization.
 
 `docs/OMEGA13-ANALYSIS.md` §11 has the dependency-ordered roadmap and §16 the next five actions.
 
@@ -202,6 +232,7 @@ cargo test --workspace                           # Rust peer
 python3 tools/verify_cross_language_digest.py    # canonical bytes agree
 python3 tools/verify_cross_language_journal.py   # history agrees
 python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python peer
+python3 tools/verify_cross_language_projection.py  # three modes and two peers agree
 python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite
 python3 tools/run_tournament.py --probe          # what can this machine serve?

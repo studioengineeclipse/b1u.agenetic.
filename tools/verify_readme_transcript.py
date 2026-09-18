@@ -154,8 +154,13 @@ def main() -> int:
                     f"{relative}: transcript names a check that does not exist: {name!r}"
                 )
 
+        # Reported even when some lines are also stale. Which checks exist does
+        # not vary by machine -- only their statuses and details do -- so an
+        # omitted check is always a defect in the file, and letting a stale
+        # detail suppress it would hide the more serious finding behind the
+        # lesser one.
         missing = sorted(set(by_name) - quoted - {name_of(line) for line in transcript})
-        if missing and not stale:
+        if missing:
             errors.append(
                 f"{relative}: transcript omits checks this tool prints: " + ", ".join(missing)
             )

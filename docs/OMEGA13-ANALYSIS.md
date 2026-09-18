@@ -171,11 +171,12 @@ In this container, on 2026-09-18:
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 132 tests
-  rust unit and vector tests              PASS     49 tests passed
+  python unit tests                       PASS     Ran 156 tests
+  rust unit and vector tests              PASS     54 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, heads AGREED
+  three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
   tournament runs end to end              PARTIAL  verdict=ACCEPT; no model server here, see docs/RUNNING.md
@@ -463,14 +464,38 @@ for reconciliation, refusing any further permit until real state is read back wi
 
 Authority state: local only.
 
-### Phase C — Projection topology
+### Phase C — Projection topology (**COMPLETE 2026-09-18**)
 
 Objective: the handoff's compact / modular / audit-replay modes over one logical authority.
 Dependencies: Phase B.
-Required evidence: destroy every projection and rebuild from the root journal to an identical
-digest. `projection_digest` and the `a_projection_can_be_destroyed_and_rebuilt_identically` tests
-are the seed; the full three-mode topology is not built.
-Exit criteria: identical digests across all three modes.
+Deliverables: `python/b1_projection`, `crates/b1-state/src/projection.rs`,
+`tools/verify_cross_language_projection.py`,
+[ADR-0007](decisions/ADR-0007-projection-topology.md).
+
+Exit criteria: identical digests across all three modes. **Met** — and met twice over, because
+the same report also compares the two language peers. Either claim alone can be passed by a
+system wrong in the other direction: three modes can agree perfectly inside one implementation
+that disagrees with its peer, and two peers can agree on a projection a third mode would have
+stored differently.
+
+The load-bearing decision is that `build_views(records)` is a pure function — it consults no
+clock, no filesystem, and not which mode is in use. That is what makes the modes *provably*
+equivalent rather than separately tested into agreement: one derivation, three destinations.
+
+Four views: `events` (one row per record), `effects` (one per effect identity, carrying the
+*latest* status, because an effect can land IN_DOUBT and later reconcile to VERIFIED), `authority`
+(what was actually done under each authorization), and `heads`. `heads` carries `chain_head` and
+`replayed_head` separately so that a projection built over a damaged journal reports the damage
+instead of laundering it into a clean summary.
+
+Audit-replay stores nothing and is the honest baseline: it *cannot* drift. Its `DriftReport` says
+"drift is not possible rather than not found", which is the same distinction §3 draws between an
+absent observation and a negative one.
+
+A stored projection's own digest is not the check. `check()` compares against a rebuild from the
+journal, never against the file's claim about itself — the journal's `payload_digest` lesson
+applied to derived state, and tested by damaging a compact projection *and repairing its
+self-declared digests*.
 
 ### Phase D — Responses shim + model provider + resource ledger (**PARTIAL 2026-09-18**)
 
@@ -552,7 +577,7 @@ Every roadmap task appears exactly once.
 | Deterministic replay and recovery | HIGH | **Done for the journal.** Not done for work-runtime recovery contracts |
 | Responses shim | HIGH | Only llama.cpp needs it: Ollama and LM Studio already speak `/v1/responses` (ADR-0002) |
 | Model provider and resource ledger | HIGH | **Done, unmeasured.** Adapters, registry and ledger exist; every size and latency figure is still a declared estimate |
-| Projection topology | HIGH | Required for the handoff's three deployment modes |
+| Projection topology | HIGH | **Done.** Three modes produce one digest, and the Rust peer derives the same four views |
 | Fourteen-language conformance | HIGH | **Done, 10/14 observed.** U-level invariant |
 | Hybrid tournament | HIGH | **Done.** Deterministic evidence eliminates before models choose, and a rejected candidate cannot be reinstated by agreement |
 | End-to-end work runner | HIGH | **Done.** One task to a verified effect, with the three refusal paths checked alongside the one write |
@@ -600,17 +625,22 @@ for ordering Phase B before Phase D even though they are otherwise independent.
 
 ## 15. Decision Points
 
-**Decided this session** (five ADRs): one global root journal with a leased single writer
+**Decided this session** (seven ADRs): one global root journal with a leased single writer
 (ADR-0001, resolves handoff open item 7); Apache-2.0 for new B1 code without relicensing ΩΣ13.9
 (ADR-0004); shim plus native adapters (ADR-0002); ephemeral-by-default encrypted-opt-in memory
 (ADR-0003, closes handoff open item 6); adopt Codex Security's contracts and skills but not its
-orchestrator (ADR-0005).
+orchestrator (ADR-0005); the Dual-Core Commit Gate with authority revalidated at both claim and
+consume time (ADR-0006); three projection deployment modes over one pure derivation, with a
+projection write classified REVERSIBLE and confined to the workspace (ADR-0007).
 
 **Open, and materially affecting later work:**
 
-1. **Phase B before Phase D, or in parallel?** Building the model path before effect-time
-   authority revalidation exposes the one risk in §13 whose recovery is UNKNOWN. Recommendation:
-   Phase B first. Not yet decided.
+1. ~~**Phase B before Phase D, or in parallel?**~~ **Decided by doing it: Phase B first.** The gate
+   landed on 2026-09-17 and the model layer on 2026-09-18, so §13's one UNKNOWN-recovery risk — a
+   shim mistranslating a call into a *different* effect — was mitigated by effect-time
+   revalidation before any model path existed to expose it. Recorded here rather than deleted,
+   because the ordering was a real choice and a document that quietly drops its own open questions
+   teaches nothing about how they were settled.
 2. **Which quantised model is B1's default?** Affects the resource ledger's whole design. The
    handoff's candidate list is sound but unbenchmarked on the target, and `gpt-oss:20b` must be
    overridden explicitly (§4.2).
@@ -638,13 +668,14 @@ than planned: not only do concurrent conflicting attempts yield at most one comm
 executor get rejected, but the race is run **between a Rust process and a Python process** on one
 database, and the loser is required to lose by the gate's own rule rather than by a database lock.
 
-**Action 3 — Projection rebuild across all three deployment modes. NEXT.**
-Objective: prove projections are disposable in compact, modular and audit-replay layouts. Input:
-the journal and the gate, both complete. Output: three layouts, one logical authority.
-Verification: destroy every projection, rebuild, compare digests. `projection_digest` and the
-`a_projection_can_be_destroyed_and_rebuilt_identically` tests are the seed. Authority: local only.
+**Action 3 — ~~Projection rebuild across all three deployment modes~~. DONE 2026-09-18.**
+See Phase C above and [ADR-0007](decisions/ADR-0007-projection-topology.md). Verification landed
+wider than planned: the same report that proves the three modes agree also proves the Rust and
+Python peers derive byte-identical views, per view rather than only in aggregate. Shown to bite —
+perturbing one integer in the Rust `authority` view produces `MISMATCH` on that view and on
+`views_digest`, and on nothing else.
 
-**Action 4 — Capability policy above per-effect authorization.**
+**Action 4 — Capability policy above per-effect authorization. NEXT.**
 Objective: the layer ADR-0006 explicitly does not cover. The gate enforces *an* authorization; it
 does not yet know which actions a workspace permits at all. Input: ΩΣ13.9's `AuthorityPolicy` and
 `workspaces.policy_json` as design reference. Output: a policy checked before an authority can
@@ -678,7 +709,7 @@ a drift that already happened once is not a hypothetical worth trusting to care.
 
 ## 17. Verification Strategy
 
-Eight verifiers, and what would falsify each:
+Nine verifiers, and what would falsify each:
 
 | Verifier | Establishes | Falsified by |
 |---|---|---|
@@ -686,6 +717,7 @@ Eight verifiers, and what would falsify each:
 | `verify_cross_language_digest.py` | Two independent implementations agree on canonical bytes | One byte of difference, printed as both strings |
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
 | `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits | Two permits, two effect records, disagreeing heads, or a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule |
+| `verify_cross_language_projection.py` | Three deployment modes derive one digest, and both peers derive the same four views | Two modes disagreeing; a file surviving `destroy()`; a mode whose read-back differs from what it wrote; either peer's view digest differing |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
 | `verify_polyglot_mutations.py` | Those checks bite | A consumer passing against a vector violating its own invariant — reported as `DECORATIVE` |
 | `verify_readme_transcript.py` | README.md quotes the verifier rather than paraphrasing it | A transcript line the tool does not print; a named check that does not exist; a check the transcript omits |
@@ -765,7 +797,7 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 ## 20. Convergence Findings
 
 **Baseline:** the B1 Local handoff of 2026-09-15, plus the three archives as supplied.
-**Candidate:** this repository, plus the five ADRs and this document.
+**Candidate:** this repository, plus the seven ADRs and this document.
 
 **Material defects found in the baseline, with what each cost:**
 
@@ -791,6 +823,9 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 18 | Two of ΩΣ13.9's release checks assert on exact prose, not on the property | `verify_omega12.py:285-286` greps literal strings absent from the 13.9 README, whose guarantees are present and reworded | §4.9; recorded for the rights holder, same failure mode as the `b1mu.toml` gap |
 | 19 | The handoff's §1.3 requires effect-time authority checking; a claim-time-only check implements half of it | the interval between claim and consume is unguarded by construction | ADR-0006: authority is revalidated a second time before the effect commits |
 | 20 | Own defect: the gate's first draft wrote journal rows directly to dodge nested transactions, skipping the journal's own refusals | duplicate event id, unknown causal parent, stale epoch and duplicate effect were all bypassed | both journals grew `append_in_lease`, so the gate gets one atomic unit *and* full validation |
+| 21 | Own defect: the work runner's consume-time revalidation was vacuous while reading as enforced | it passed the grant-time digest to `consume()`, which always matches, under a comment claiming re-observation | `pre_effect_digest` — observed immediately before acting, which is the only value that reads the property that matters |
+| 22 | Own defect: README printed a paraphrase of `verify_all.py` as though it were the transcript, including `7/7 fields AGREED` on a row reporting a head digest | comparing the block against a real run | the tool's lines were made worth quoting, and `verify_readme_transcript.py` now checks both files that quote them |
+| 23 | Own defect: two projection tamper tests mutated a field to the value it already held | the tests failed, correctly, reporting no drift | mutations now assert they are mutations before writing |
 
 Finding 20 is the most instructive of this increment's own defects. The workaround produced
 passing tests, because nothing in the gate's own suite exercised the journal's refusals — the hole
@@ -806,6 +841,17 @@ regression, which is the more expensive kind of defect.
 Finding 16 is worth separating from 14 and 15 because it is not a bug in a test — it is a
 reporting defect. The rows were correct and the footer was not, and the footer is where a reader
 stops.
+
+Findings 21, 22 and 23 are one pattern in three places: **a check that cannot fail.** A staleness
+comparison against a value that always matches, a transcript quoting itself, a tamper test that
+changes nothing. None of the three produced a failing test, and two of them produced a *passing*
+one, which is worse than failing because it is evidence-shaped. The only reason all three were
+found is that each was read for whether it *could* report a problem rather than for whether it
+did. That habit is the one this project most depends on and the one nothing in it can automate.
+
+Finding 22 also closes a loop with findings 5 and 18: the "checks drifted from substance" pattern
+was first recorded against the upstream archive, then found here, in this document's own §4.7 and
+in the README. It is not a property of that archive. It is what documentation does.
 
 **Changes rejected during the pass, and why** — these matter as much as the retained ones:
 

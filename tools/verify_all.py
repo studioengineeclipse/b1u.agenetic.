@@ -213,6 +213,24 @@ def summarise_gate(report: dict[str, object]) -> str:
     )
 
 
+def summarise_projection(report: dict[str, object]) -> str:
+    """Two claims on one line: modes agree, and the two peers agree.
+
+    Both are named even when the second is unobservable, because "3 modes
+    AGREED" on its own reads like the whole property and it is half of it.
+    """
+    modes = report.get("modes") or {}
+    mode_count = len(modes) if isinstance(modes, dict) else 0
+    cross = report.get("cross_language")
+    if not isinstance(cross, dict) or not cross:
+        return f"{mode_count} modes {report.get('cross_mode', '?')}; peers not compared here"
+    agreed = sum(1 for verdict in cross.values() if verdict == "AGREED")
+    return (
+        f"{mode_count} modes {report.get('cross_mode', '?')}, "
+        f"{agreed}/{len(cross)} rust/python AGREED"
+    )
+
+
 def summarise_json_tool(
     label: str, script: str, timeout: int, extract=None
 ) -> dict[str, object]:
@@ -314,6 +332,12 @@ def main() -> int:
             "verify_cross_language_gate.py",
             args.timeout,
             summarise_gate,
+        ),
+        summarise_json_tool(
+            "three deployment modes, one truth",
+            "verify_cross_language_projection.py",
+            args.timeout,
+            summarise_projection,
         ),
         summarise_json_tool(
             "fourteen-language participation",
