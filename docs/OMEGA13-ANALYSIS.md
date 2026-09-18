@@ -171,12 +171,13 @@ In this container, on 2026-09-18:
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 217 tests
+  python unit tests                       PASS     Ran 243 tests
   rust unit and vector tests              PASS     65 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
+  a finding blocks but cannot authorize   PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 14 findings (14 self-referential)
   shim vectors define and discriminate    PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
@@ -609,11 +610,32 @@ one that happened to still parse.
 mapping, no retries. `python/b1_shim` is the meaning of the bytes, not the moving of them, and
 calling it "the shim" would be the overclaim this project exists to avoid.
 
-### Phase F — Security evidence
+### Phase F — Security evidence (**COMPLETE 2026-09-18**, with one part blocked)
 
 Objective: per ADR-0005 — adopt Codex Security's schemas and skills, drive them from B1's local
 router, treat semantic embeddings as an optional capability that degrades rather than fails.
+Deliverables: `python/b1_security`, `tools/verify_security_evidence.py`,
+[ADR-0010](decisions/ADR-0010-security-evidence.md).
+
 Required evidence: a finding blocks an unsafe candidate without granting mutation authority.
+**Met**, both halves, with a control on each. The second half is the one that needed design rather
+than code: a negative property stated in documentation stops being true the first time someone has
+a good reason to make an exception, so it is structural instead. `tighten()` passes the input
+policy's `allow` tuple through as the same object, and `b1_security` does not import
+`b1_authority` — checked in a fresh interpreter, because a text scan catches a direct import and
+misses the transitive one that would actually erode it.
+
+The epistemic half is `Coverage`. An empty findings list means the same thing whether the scanner
+looked everywhere or nowhere, so coverage is required beside the findings, an unreadable target is
+recorded rather than skipped, and `ScanManifest.epistemic_status` is computed — `VERIFIED` demands
+complete coverage and nothing degraded. ADR-0005's anticipated case, semantic dedupe with no
+embeddings endpoint, drops the status by construction rather than by someone remembering.
+
+**Blocked, and not claimed:** the schema and skill port ADR-0005 decided on. Four schemas and
+fifteen skills were the substance of "adopt the contracts", and none of them are here — the archive
+is no longer present in this environment, so the shapes in `b1_security` are B1's own, written to
+fill the same role and not claimed compatible. Nothing from that archive is declared in
+`provenance.json`, and there is nothing to declare.
 
 ### Phase G — Desktop, pet, and the private user layer
 
@@ -643,7 +665,7 @@ Every roadmap task appears exactly once.
 | End-to-end work runner | HIGH | **Done.** One task to a verified effect, with the three refusal paths checked alongside the one write |
 | OmniBook model benchmark | HIGH | Harness written, never run. The only thing that turns §6's UNKNOWNs into measurement, and it needs a model download — a persistent effect |
 | Capability policy above per-effect authorization | HIGH | **Done.** Default deny, deny-wins, a persistence ceiling, UNKNOWN never admitted, and the policy digest bound into every envelope |
-| Security evidence integration | HIGH | Consequential code and agent safety |
+| Security evidence integration | HIGH | **Done for the layer.** A finding blocks and structurally cannot authorise. The Codex Security schema port is blocked on the archive |
 | Private user layer isolation | HIGH | Public-repository requirement; depends on ADR-0003 |
 | Desktop full UI | MEDIUM | User-facing core, but after the backend contracts it renders |
 | Pet overlay | MEDIUM | Depends on real runtime state existing to display |
@@ -791,7 +813,7 @@ a drift that already happened once is not a hypothetical worth trusting to care.
 
 ## 17. Verification Strategy
 
-Ten verifiers, and what would falsify each:
+Eleven verifiers, and what would falsify each:
 
 | Verifier | Establishes | Falsified by |
 |---|---|---|
@@ -800,6 +822,7 @@ Ten verifiers, and what would falsify each:
 | `verify_cross_language_journal.py` | Both peers derive identical history | Any of seven compared fields differing |
 | `verify_cross_language_gate.py` | A Rust process and a Python process race one gate and exactly one effect commits, under one agreed capability policy | Two permits, two effect records, disagreeing heads, a loser that lost to `SQLITE_BUSY` rather than to the gate's own rule, disagreeing policy digests, or either peer granting a capability the policy denies |
 | `verify_cross_language_projection.py` | Three deployment modes derive one digest, and both peers derive the same four views | Two modes disagreeing; a file surviving `destroy()`; a mode whose read-back differs from what it wrote; either peer's view digest differing |
+| `verify_security_evidence.py` | A finding blocks an unsafe candidate and cannot grant authority | An unsafe candidate surviving; a safe one rejected too (which would make the first check vacuous); `b1_security` reaching `b1_authority` in a fresh interpreter; a tightening that changes the allow list or permits a probe previously refused |
 | `verify_responses_vectors.py` | The shim contract's vectors define what a translation must preserve, and discriminate | A vector the reference fails; a vector that also passes the translator built to break its invariant (`DECORATIVE`); an invariant with no vector |
 | `verify_polyglot.py` | Fourteen toolchains independently check fourteen invariants | A consumer whose output differs from its declared postcondition |
 | `verify_polyglot_mutations.py` | Those checks bite | A consumer passing against a vector violating its own invariant — reported as `DECORATIVE` |
@@ -912,6 +935,7 @@ Recovery actions are themselves persistent effects and carry the ordinary author
 | 24 | ADR-0006 shipped a gate that enforces *an* authorization while knowing nothing about which actions a workspace permits at all | the only remaining barrier was a person reading every envelope, forever | ADR-0008: a standing capability policy, asked before an authority can be granted |
 | 25 | An authorization could outlive the standing rule it was granted under | nothing bound the two together, so tightening a policy would leave issued permissions running under the wider one | `policy_digest` is in the envelope and checked first by `staleness()` |
 | 26 | The scope matcher existed twice, and the policy layer would have made it three times | `b1_authority.authority._scope_admits` and its Rust twin | moved to `b1_protocol.scope` / `b1-protocol::scope`; `scope_is_valid` added, which refuses `docs/*` outright |
+| 28 | The security criterion's second half -- "without independently granting mutation authority" -- is a negative property, and a negative property stated in documentation stops being true the first time someone has a good reason to make an exception | ADR-0005 stated it as a design intent with nothing enforcing it | ADR-0010: `tighten()` passes the allow tuple through as the same object, and the absence of a `b1_authority` import is checked in a fresh interpreter |
 | 27 | Own defect: the R3 shim vector was DECORATIVE -- its arguments string survives a JSON round-trip unchanged, so it passed the lossy translator built to break it | `verify_responses_vectors.py` reported it on its first run | a string where a round-trip inserts whitespace, renormalises `1e1` to `10.0` and escapes non-ASCII |
 
 Finding 20 is the most instructive of this increment's own defects. The workaround produced

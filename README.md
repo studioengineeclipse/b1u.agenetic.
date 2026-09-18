@@ -1,8 +1,9 @@
 # B1 Local
 
 A local-first multi-model agent platform for Windows ARM64: canonical event identity, one
-authoritative history, an authority gate above it, and a multi-model tournament. Security
-evidence, the desktop UI and the pet overlay are designed but not built.
+authoritative history, a capability policy and authority gate above it, a multi-model tournament,
+and security findings that constrain without authorising. The desktop UI, the pet overlay and the
+shim's transport are designed but not built.
 
 ## Can I run the multi-model yet?
 
@@ -30,12 +31,13 @@ known yet.
 $ python3 tools/verify_all.py
 
   provenance record                       PASS     12 derived files declared; publication BLOCKED
-  python unit tests                       PASS     Ran 217 tests
+  python unit tests                       PASS     Ran 243 tests
   rust unit and vector tests              PASS     65 tests passed
   rust/python canonical bytes agree       PASS     3/3 vectors AGREED
   rust/python journal history agrees      PASS     7/7 fields AGREED after 4 events
   rust/python gate commits one effect     PASS     1 permit, 1 effect, losers REFUSED/PERMIT_SPENT, both refuse denied, heads AGREED
   three deployment modes, one truth       PASS     3 modes AGREED, 5/5 rust/python AGREED
+  a finding blocks but cannot authorize   PASS     unsafe REJECT, safe survives; no authority import, 0 widened; self-scan 14 findings (14 self-referential)
   shim vectors define and discriminate    PASS     10 vectors for 10 invariants, 10 catch a lossy translator; spellings ASSUMED
   fourteen-language participation         PARTIAL  10 POSTCONDITION_VERIFIED, 4 UNKNOWN of 14 (unknown: C#, Dart, Kotlin, Swift)
   fourteen-language checks actually bite  PARTIAL  10 REFUSED, 4 UNKNOWN of 14
@@ -74,14 +76,15 @@ Everything runs with **the Python standard library and a Rust toolchain**. No `p
 | `python/b1_work` | The runner that joins them: task in, verified effect out. `effects.py` is the only code that touches the world |
 | `python/b1_projection` | Four derived views, three deployment modes, one digest they must all agree on |
 | `python/b1_shim` | What a Responses↔chat-completions translation must preserve. The meaning of the bytes; not the shim |
+| `python/b1_security` | Findings as tournament evidence. Can narrow the policy; structurally cannot widen it |
 | `conformance/vectors/` | Committed canonical bytes every implementation is checked against |
 | `contracts/b1-envelope-v1.json` | Fourteen invariants, one owned by each language |
 | `contracts/b1-responses-shim-v1.json` | Ten invariants a Responses translation must preserve, written before the shim |
 | `conformance/responses/` | One vector per invariant, each required to catch a deliberately lossy translator |
 | `polyglot/envelope_v1/` | Fourteen independent consumers |
-| `tools/` | Ten verifiers, the tournament runner, the agent demo, the benchmark harness |
+| `tools/` | Eleven verifiers, the tournament runner, the agent demo, the benchmark harness |
 | `docs/OMEGA13-ANALYSIS.md` | The full Ω13 deconstruction pass: findings, roadmap, risks, unknowns |
-| `docs/decisions/` | Nine ADRs, each recording what was decided and what it cost |
+| `docs/decisions/` | Ten ADRs, each recording what was decided and what it cost |
 | `docs/RUNNING.md` | How to bring up local models on the OmniBook |
 
 ## Two questions, both of which must say yes
@@ -265,6 +268,7 @@ python3 tools/verify_cross_language_digest.py    # canonical bytes agree
 python3 tools/verify_cross_language_journal.py   # history agrees
 python3 tools/verify_cross_language_gate.py      # a Rust peer races a Python peer
 python3 tools/verify_cross_language_projection.py  # three modes and two peers agree
+python3 tools/verify_security_evidence.py        # a finding blocks, and cannot authorise
 python3 tools/verify_responses_vectors.py        # the shim contract discriminates
 python3 tools/verify_polyglot.py                 # fourteen languages
 python3 tools/verify_polyglot_mutations.py       # their checks bite

@@ -243,6 +243,28 @@ def summarise_projection(report: dict[str, object]) -> str:
     )
 
 
+def summarise_security(report: dict[str, object]) -> str:
+    """Both halves of the exit criterion, and the self-scan's shape.
+
+    The second half is stated as what did *not* happen, because that is the
+    claim: no authority import, no widened probe. A line reporting only that a
+    finding blocked would describe a security layer that had passed half its
+    criterion.
+    """
+    blocks = report.get("blocks") or {}
+    cannot = report.get("cannot_authorise") or {}
+    scan = report.get("self_scan") or {}
+    if not isinstance(blocks, dict) or not isinstance(cannot, dict):
+        return "no steps reported"
+    findings = len(scan.get("findings") or []) if isinstance(scan, dict) else 0
+    own = scan.get("self_referential", "?") if isinstance(scan, dict) else "?"
+    return (
+        f"unsafe {blocks.get('unsafe_candidate', '?')}, safe survives; "
+        f"no authority import, {cannot.get('widened_probes', '?')} widened; "
+        f"self-scan {findings} findings ({own} self-referential)"
+    )
+
+
 def summarise_shim(report: dict[str, object]) -> str:
     """How many vectors exist, and how many of them actually catch something.
 
@@ -368,6 +390,12 @@ def main() -> int:
             "verify_cross_language_projection.py",
             args.timeout,
             summarise_projection,
+        ),
+        summarise_json_tool(
+            "a finding blocks but cannot authorize",
+            "verify_security_evidence.py",
+            args.timeout,
+            summarise_security,
         ),
         summarise_json_tool(
             "shim vectors define and discriminate",
